@@ -1,11 +1,22 @@
 module std::io;
 import std::math;
 
+<* Uppercase hexadecimal digits. *>
 const char[16] XDIGITS_H = "0123456789ABCDEF";
+<* Lowercase hexadecimal digits. *>
 const char[16] XDIGITS_L = "0123456789abcdef";
 
+<* A width or precision field in a format string could not be parsed, or an argument has an unsupported type. *>
 excuse BAD_FORMAT;
 
+<*
+ Print each byte as two hexadecimal digits.
+
+ @param [inout] f : "The formatter to print to"
+ @param out : "The bytes to print"
+ @param uppercase : "Use uppercase hex digits"
+ @return "The number of characters printed"
+*>
 fn sz? print_hex_chars(Formatter* f, char[] out, bool uppercase) @inline
 {
 	char past_10 = (uppercase ? 'A' : 'a') - 10u;
@@ -22,6 +33,12 @@ fn sz? print_hex_chars(Formatter* f, char[] out, bool uppercase) @inline
 	return len;
 }
 
+<*
+ Record a fault unless one has already been recorded.
+
+ @param f : "The fault to record"
+ @return "The first fault recorded, which is `f` if none was recorded before"
+*>
 macro fault Formatter.first_err(&self, fault f)
 {
 	if (self.first_fault) return self.first_fault;
@@ -176,6 +193,15 @@ fn sz? formatter_out_substr(Formatter* f, String str) @private
 	return index;
 }
 
+<*
+ Print `c` repeatedly to pad output of length `len` up to `width`.
+
+ @param [inout] f : "The formatter to print to"
+ @param c : "The padding character"
+ @param width : "The width to pad to"
+ @param len : "The length of the output already printed"
+ @return "The number of padding characters printed, 0 if `len` >= `width`"
+*>
 fn sz? formatter_pad(Formatter* f, char c, sz width, sz len) @inline
 {
 	sz delta = width - len;
@@ -183,6 +209,13 @@ fn sz? formatter_pad(Formatter* f, char c, sz width, sz len) @inline
 	return max(0, delta);
 }
 
+<*
+ Write the decimal digits of `x` backwards, ending just before `s`. Nothing is written for 0.
+
+ @param x : "The value to write"
+ @param s : "A pointer just past the end of the buffer to write to"
+ @return "A pointer to the first digit written"
+*>
 fn char* fmt_u(uint128 x, char* s)
 {
 	for (; x > ulong::max; x /= 10) *--s = '0' + (char)(x % 10);
@@ -190,23 +223,66 @@ fn char* fmt_u(uint128 x, char* s)
 	return s;
 }
 
+<*
+ Print the characters as-is, without any formatting.
+
+ @param s : "The characters to print"
+ @return "The number of characters printed"
+*>
 fn sz? Formatter.out_chars(&self, char[] s)
 {
 	foreach (c : s) self.print_char(c)!;
 	return s.len;
 }
 
+<* The notation used to print a floating point value. *>
 enum FloatFormatting
 {
+	<* Fixed-point notation, as with `%f`. *>
 	FLOAT,
+	<* Exponential notation, as with `%e`. *>
 	EXPONENTIAL,
+	<* The shorter of fixed-point and exponential notation, as with `%g`. *>
 	ADAPTIVE,
+	<* Hexadecimal float notation, as with `%a`. *>
 	HEX
 }
 
+<*
+ Print a double in exponential notation (`%e`) using the formatter's current flags, width and precision.
+
+ @param [inout] self : "The formatter to print to"
+ @param y : "The value to print"
+ @return "The number of characters printed"
+ @return? INTERNAL_BUFFER_EXCEEDED : "If the requested precision is too large"
+*>
 fn sz? formatter_etoa(Formatter* self, double y) => formatter_floatformat(self, EXPONENTIAL, y);
+<*
+ Print a double in fixed-point notation (`%f`) using the formatter's current flags, width and precision.
+
+ @param [inout] self : "The formatter to print to"
+ @param y : "The value to print"
+ @return "The number of characters printed"
+ @return? INTERNAL_BUFFER_EXCEEDED : "If the requested precision is too large"
+*>
 fn sz? formatter_ftoa(Formatter* self, double y) => formatter_floatformat(self, FLOAT, y);
+<*
+ Print a double in the shorter of fixed-point and exponential notation (`%g`) using the formatter's current flags, width and precision.
+
+ @param [inout] self : "The formatter to print to"
+ @param y : "The value to print"
+ @return "The number of characters printed"
+ @return? INTERNAL_BUFFER_EXCEEDED : "If the requested precision is too large"
+*>
 fn sz? formatter_gtoa(Formatter* self, double y) => formatter_floatformat(self, ADAPTIVE, y);
+<*
+ Print a double in hexadecimal float notation (`%a`) using the formatter's current flags, width and precision.
+
+ @param [inout] self : "The formatter to print to"
+ @param y : "The value to print"
+ @return "The number of characters printed"
+ @return? INTERNAL_BUFFER_EXCEEDED : "If the requested precision is too large"
+*>
 fn sz? formatter_atoa(Formatter* self, double y) => formatter_floatformat(self, HEX, y);
 
 fn sz? formatter_floatformat_hex(Formatter* self, double y, bool is_neg, sz pl, sz p) @private @inline

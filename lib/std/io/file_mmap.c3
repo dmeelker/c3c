@@ -1,6 +1,7 @@
 module std::io::file::mmap @feat(POSIX, WIN32);
 import std::core::mem::vm, std::io::file;
 
+<* A memory mapped region of a file, created with `file::mmap_file` or `file::mmap_open`. *>
 struct FileMmap
 {
 	File file;
@@ -10,9 +11,9 @@ struct FileMmap
 }
 
 <*
- Provides a slice of bytes to the expected mapped range discarding the extra bytes due to misaligment of offset and/or size.
+ Provides a slice of bytes to the expected mapped range discarding the extra bytes due to misalignment of offset and/or size.
 
- @return "Slice of the mapped range where the first byte matches the file's byte at the offset specified to File::file_mmap()"
+ @return "Slice of the mapped range where the first byte matches the file's byte at the offset passed to file::mmap_file()"
 *>
 fn char[] FileMmap.bytes(&self)
 {
@@ -20,7 +21,10 @@ fn char[] FileMmap.bytes(&self)
 }
 
 <*
-  Destroys the underlying VirtualMemory object ie. calls munmap()"
+ Unmap the memory region and close the file if this FileMmap owns it (created by `file::mmap_open`).
+
+ @return? io::FILE_NOT_VALID, io::INTERRUPTED, io::INCOMPLETE_WRITE, io::UNKNOWN_ERROR : "If closing the file failed"
+ @return? vm::INVALID_ARGS, vm::UNMAPPED_ACCESS, vm::RELEASE_FAILED : "If unmapping failed"
 *>
 fn void? FileMmap.destroy(&self) @maydiscard
 {
@@ -33,13 +37,25 @@ fn void? FileMmap.destroy(&self) @maydiscard
 module std::io::file @feat(POSIX, WIN32);
 
 <*
- Maps a region of an already-opened file into memory
+ Map a region of an already opened file into memory; the file is not owned and must be closed by the caller.
+
+ #### Example:
+ ```
+ file::save("data.txt", "Hello world")!!;
+ File f = file::open("data.txt", "rb")!!;
+ defer (void)f.close();
+ FileMmap mm = file::mmap_file(f, 6)!!;
+ defer mm.destroy();
+ io::printn((String)mm.bytes()); // world
+ ```
 
  @param file : "Already opened file created on the caller scope"
- @param offset : "Byte offset in file, will be rounded down to page size"
- @param len : "Size in bytes to map starting from offset, will be rounded up to page size"
- @return? mem::OUT_OF_MEMORY, vm::ACCESS_DENIED, vm::RANGE_OVERFLOW, vm::INVALID_ARGS, vm::UNKNOWN_ERROR, io::NO_PERMISSION, io::FILE_NOT_VALID, io::WOULD_BLOCK, io::FILE_NOT_FOUND
+ @param offset : "Byte offset in file, the mapping itself starts at the page boundary below it"
+ @param len : "Size in bytes to map starting from offset, 0 maps up to the end of the file"
+ @param access : "The access permissions of the mapped memory"
+ @param shared : "If true, writes go to the file; otherwise the mapping is private (copy-on-write)"
  @return "Memory mapped region. Must be released with FileMmap.destroy(). Provided File will not be closed"
+ @return? mem::OUT_OF_MEMORY, vm::ACCESS_DENIED, vm::RANGE_OVERFLOW, vm::INVALID_ARGS, vm::UNKNOWN_ERROR, io::NO_PERMISSION, io::FILE_NOT_VALID, io::WOULD_BLOCK, io::FILE_NOT_FOUND
 *>
 fn FileMmap? mmap_file(File file, sz offset = 0, sz len = 0, VirtualMemoryAccess access = READ, bool shared = false)
 {
@@ -67,14 +83,25 @@ fn FileMmap? mmap_file(File file, sz offset = 0, sz len = 0, VirtualMemoryAccess
 }
 
 <*
- Maps a region of the given file into memory
+ Open a file and map a region of it into memory; the file is closed when the FileMmap is destroyed.
+
+ #### Example:
+ ```
+ file::save("data.txt", "Hello world")!!;
+ FileMmap mm = file::mmap_open("data.txt", "rb")!!;
+ defer mm.destroy();
+ io::printn((String)mm.bytes()); // Hello world
+ ```
 
  @param filename : "File path"
- @param mode : "File opening mode"
- @param offset : "Byte offset in file, will be rounded down to page size"
- @param len : "Size in bytes to map starting from offset, will be rounded up to page size"
- @return? mem::OUT_OF_MEMORY, vm::ACCESS_DENIED, vm::RANGE_OVERFLOW, vm::INVALID_ARGS, vm::UNKNOWN_ERROR, io::NO_PERMISSION, io::FILE_NOT_VALID, io::WOULD_BLOCK, io::FILE_NOT_FOUND
+ @param mode : "File opening mode, as for `file::open`"
+ @param offset : "Byte offset in file, the mapping itself starts at the page boundary below it"
+ @param len : "Size in bytes to map starting from offset, 0 maps up to the end of the file"
+ @param access : "The access permissions of the mapped memory"
+ @param shared : "If true, writes go to the file; otherwise the mapping is private (copy-on-write)"
  @return "Memory mapped region. Must be released with FileMmap.destroy()"
+ @return? io::FILE_NOT_FOUND, io::NO_PERMISSION : "If the file could not be opened"
+ @return? mem::OUT_OF_MEMORY, vm::ACCESS_DENIED, vm::RANGE_OVERFLOW, vm::INVALID_ARGS, vm::UNKNOWN_ERROR, io::FILE_NOT_VALID, io::WOULD_BLOCK
 *>
 fn FileMmap? mmap_open(String filename, String mode, sz offset = 0, sz len = 0, VirtualMemoryAccess access = READ, bool shared = false)
 {

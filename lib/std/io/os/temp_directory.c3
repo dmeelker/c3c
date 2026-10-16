@@ -1,5 +1,6 @@
 module std::io::os;
 
+<* Well-known per-user directories that can be looked up with `native_user_directory`. *>
 enum NativeSystemDir
 {
 	DESKTOP,
@@ -25,6 +26,17 @@ fn String? win32_get_known_folder_temp(Win32_REFKNOWNFOLDERID rfid) @private @fe
 	return string::from_wstring(tmem, (WString)path);
 }
 
+<*
+ Return the home directory of the current user.
+ Usually called through `path::home_directory`.
+
+ Uses `$HOME` on Darwin, Linux, the BSDs and Haiku, and the profile known
+ folder on Windows.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The home directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If it can't be determined, or the platform is unsupported"
+*>
 fn Path? native_home_directory(Allocator allocator) => @pool()
 {
 	$switch env::OS_TYPE:
@@ -46,6 +58,21 @@ fn Path? native_home_directory(Allocator allocator) => @pool()
 	$endswitch
 }
 
+<*
+ Return a well-known directory of the current user, such as Desktop or Downloads.
+ Usually called through the `path::*_directory` functions, for example `path::downloads_directory`.
+
+ Linux, the BSDs and Haiku use the XDG user directories, Darwin uses the
+ system search paths and Windows uses known folders (created if missing).
+ Not every directory exists everywhere: SAVED_GAMES and SCREENSHOTS are
+ Windows-only, TEMPLATES is unavailable on Darwin and PUBLIC_SHARE is
+ unavailable on Windows.
+
+ @param allocator : "The allocator for the returned path"
+ @param dir : "The directory to look up"
+ @return "The requested directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If the directory is not available on this platform or can't be found"
+*>
 fn Path? native_user_directory(Allocator allocator, NativeSystemDir dir) => @pool()
 {
 	$switch env::OS_TYPE:
@@ -108,6 +135,18 @@ fn Path? native_user_directory(Allocator allocator, NativeSystemDir dir) => @poo
 }
 
 
+<*
+ Return the directory for temporary files.
+ Usually called through `path::temp_directory`.
+
+ On Windows this is the result of GetTempPathW. Elsewhere the first non-empty
+ of the `TMPDIR`, `TMP`, `TEMP` and `TEMPDIR` environment variables is used,
+ falling back to "/tmp". The directory is not checked for existence.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The temporary directory"
+ @return? io::GENERAL_ERROR : "On Windows, if the OS call fails"
+*>
 fn Path? native_temp_directory(Allocator allocator) @feat(!WIN32)
 {
 	foreach (String env : { "TMPDIR", "TMP", "TEMP", "TEMPDIR" })
@@ -118,6 +157,18 @@ fn Path? native_temp_directory(Allocator allocator) @feat(!WIN32)
 	return path::new(allocator, "/tmp");
 }
 
+<*
+ Return the directory for temporary files.
+ Usually called through `path::temp_directory`.
+
+ On Windows this is the result of GetTempPathW. Elsewhere the first non-empty
+ of the `TMPDIR`, `TMP`, `TEMP` and `TEMPDIR` environment variables is used,
+ falling back to "/tmp". The directory is not checked for existence.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The temporary directory"
+ @return? io::GENERAL_ERROR : "On Windows, if the OS call fails"
+*>
 fn Path? native_temp_directory(Allocator allocator) @feat(WIN32) => @pool()
 {
 	Win32_DWORD len = win32::getTempPathW(0, null);
@@ -131,6 +182,9 @@ fn Path? native_temp_directory(Allocator allocator) @feat(WIN32) => @pool()
 module std::io::os @feat(NO_LIBC);
 import std::io::path;
 
+<* Without libc the home directory is unknown: always returns PATH_COULD_NOT_BE_FOUND. *>
 macro Path? native_home_directory(Allocator allocator) => io::PATH_COULD_NOT_BE_FOUND~;
+<* Without libc the temporary directory is unknown: always returns PATH_COULD_NOT_BE_FOUND. *>
 macro Path? native_temp_directory(Allocator allocator) => io::PATH_COULD_NOT_BE_FOUND~;
+<* Without libc user directories are unknown: always returns PATH_COULD_NOT_BE_FOUND. *>
 fn Path? native_user_directory(Allocator allocator, NativeSystemDir dir) => io::PATH_COULD_NOT_BE_FOUND~;

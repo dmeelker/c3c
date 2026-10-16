@@ -5,20 +5,75 @@ import libc;
 // It is vitally important that the formatter doesn't do any allocations,
 // or it ceases to be useful in constrained environments.
 
+<* The size of the stack buffer used when formatting a single integer. *>
 const int PRINTF_NTOA_BUFFER_SIZE = 256;
 
+<*
+ Implement this interface to customize how a type is printed with `%s` and the print functions.
+
+ #### Example:
+ ```
+ struct Celsius (Printable)
+ {
+ 	double degrees;
+ }
+
+ fn sz? Celsius.to_format(&self, Formatter* f) @dynamic
+ {
+ 	return f.printf("%.1f C", self.degrees);
+ }
+
+ fn void main()
+ {
+ 	Celsius c = { 21.5 };
+ 	io::printfn("%s", c); // 21.5 C
+ }
+ ```
+*>
 interface Printable
 {
+	<*
+	 Return a fixed string representing the value, used if `to_format` is not implemented.
+
+	 @return "The string to print"
+	*>
 	fn String to_constant_string() @optional;
+	<*
+	 Print the value to the formatter.
+
+	 @param [inout] formatter : "The formatter to print to"
+	 @return "The number of characters printed"
+	*>
 	fn sz? to_format(Formatter* formatter) @optional;
 }
 
-excuse { BUFFER_EXCEEDED, INTERNAL_BUFFER_EXCEEDED, INVALID_FORMAT, NOT_ENOUGH_ARGUMENTS, INVALID_ARGUMENT }
+excuse
+{
+	<* The output buffer is too small, e.g. in `bprintf`. *>
+	BUFFER_EXCEEDED,
+	<* A number was too large for the formatter's internal buffer. *>
+	INTERNAL_BUFFER_EXCEEDED,
+	<* The format string is malformed or contains an unknown specifier. *>
+	INVALID_FORMAT,
+	<* The format string has more specifiers than there are arguments. *>
+	NOT_ENOUGH_ARGUMENTS,
+	<* An argument could not be printed with the given specifier. *>
+	INVALID_ARGUMENT
+}
 
+<* A function that receives each character a `Formatter` outputs, along with the formatter's user data. *>
 alias OutputFn = fn void?(void* buffer, char c);
+<* The float type used internally for formatting floating point values. *>
 alias FloatType = double;
 
 
+<*
+ Check if a type is a struct or bitstruct with neither `to_format` nor `to_constant_string`,
+ meaning the print functions will print it member by member.
+
+ @param $Type : "The type to check"
+ @return "True if the type uses the default struct printing"
+*>
 macro bool is_struct_with_default_print($Type)
 {
 	return ($Type::kind == STRUCT ||| $Type::kind == BITSTRUCT)
@@ -27,9 +82,15 @@ macro bool is_struct_with_default_print($Type)
 }
 
 <*
- Introspect a struct and print it to a formatter
+ Introspect a struct and print it to a formatter member by member, e.g. `{ x: 1, name: abc }`.
 
- @require @kindof(value) == STRUCT || @kindof(value) == BITSTRUCT : `This macro is only valid on macros`
+ Members that are themselves structs without custom printing are printed recursively.
+
+ @param value : "The struct or bitstruct to print"
+ @param [inout] f : "The formatter to print to"
+ @param $force_dump : "If true, print all nested structs member by member, even if they implement Printable"
+ @return "The number of characters printed"
+ @require @kindof(value) == STRUCT || @kindof(value) == BITSTRUCT : `This macro is only valid on structs and bitstructs`
 *>
 macro sz? struct_to_format(value, Formatter* f, bool $force_dump)
 {
@@ -51,11 +112,42 @@ macro sz? struct_to_format(value, Formatter* f, bool $force_dump)
 	return total + f.print(" }");
 }
 
+<*
+ Print to the formatter using a 'printf'-style format string. See `io::printf` for details on formatting.
+
+ @param format : "The printf-style format string"
+ @param args : "The values to format"
+ @return "The number of characters printed"
+ @return? INVALID_FORMAT, NOT_ENOUGH_ARGUMENTS, INVALID_ARGUMENT, INTERNAL_BUFFER_EXCEEDED : "If the format string and arguments don't match, or a fault from the output function"
+*>
 fn sz? Formatter.printf(&self, String format, args...)
 {
 	return self.vprintf(format, args) @inline;
 }
 
+<*
+ Formats values and sends each resulting character to an output function, without allocating.
+
+ The anonymous inner struct holds the formatting state: flags, width and precision of the current
+ specifier, and the first fault recorded during the call.
+
+ #### Example:
+ ```
+ fn void? count_fn(void* data, char c)
+ {
+ 	(*(int*)data)++;
+ }
+
+ fn void main()
+ {
+ 	int count;
+ 	Formatter f;
+ 	f.init(&count_fn, &count);
+ 	f.printf("%d-%s", 123, "abc")!!;
+ 	io::printn(count); // 7
+ }
+ ```
+*>
 struct Formatter
 {
 	void *data;
@@ -69,6 +161,7 @@ struct Formatter
 	}
 }
 
+<* The flags parsed from the current format specifier, such as `-`, `0`, `+`, space and `#`. *>
 bitstruct PrintFlags : uint
 {
 	bool zeropad;
@@ -80,6 +173,12 @@ bitstruct PrintFlags : uint
 	bool precision;
 }
 
+<*
+ Initialize the formatter with an output function and the user data passed to it.
+
+ @param out_fn : "The function called for each character output"
+ @param data : "User data passed to `out_fn`, may be null"
+*>
 fn void Formatter.init(&self, OutputFn out_fn, void* data = null)
 {
 	*self = { .data = data, .out_fn = out_fn};
@@ -87,6 +186,15 @@ fn void Formatter.init(&self, OutputFn out_fn, void* data = null)
 
 
 
+<*
+ Print a value using its `to_format` or, failing that, its `to_constant_string` method.
+
+ The formatter's flags, width and precision are restored afterwards. A null value prints "(null)".
+
+ @param arg : "The value to print"
+ @return "The number of characters printed"
+ @return? NOT_FOUND : "If the value implements neither method"
+*>
 fn sz? Formatter.print_with_function(&self, Printable arg)
 {
 	if (&arg.to_format)
@@ -125,12 +233,29 @@ fn void? out_null_fn(void* data @unused, char c @unused) @private
 {
 }
 
+<*
+ Print an error marker to the formatter and return INVALID_FORMAT.
+
+ @param [inout] f : "The formatter to print to"
+ @param $fault : `The marker text to print, e.g. "%ERR"`
+ @return? INVALID_FORMAT : "Always"
+*>
 macro sz? @report_fault(Formatter* f, $fault)
 {
 	(void)formatter_out_substr(f, $fault);
 	return INVALID_FORMAT~;
 }
 
+<*
+ Evaluate a formatting action, printing "<INVALID>" and recording INVALID_ARGUMENT if it fails.
+
+ Buffer faults are recorded and returned as-is.
+
+ @param [inout] f : "The formatter being printed to"
+ @param #action : "The expression that prints the value"
+ @return "The number of characters printed by the action"
+ @return? BUFFER_EXCEEDED, INTERNAL_BUFFER_EXCEEDED, INVALID_ARGUMENT : "The first fault recorded by the formatter"
+*>
 macro sz? @wrap_bad(Formatter* f, #action)
 {
 	sz? len = #action;
@@ -152,6 +277,36 @@ macro sz? @wrap_bad(Formatter* f, #action)
 
 
 
+<*
+ Print to the formatter using a 'printf'-style format string and a slice of arguments.
+ See `io::printf` for details on formatting.
+
+ A missing argument prints `<MISSING>` and an unknown specifier prints `<BAD FORMAT>`; formatting
+ then continues and the first fault is returned at the end. An argument that can't be printed
+ (`<INVALID>`) or a malformed `*` width or precision stops formatting immediately.
+ If no output function is set, output is discarded.
+
+ #### Example:
+ ```
+ fn void? stdout_fn(void* data @unused, char c)
+ {
+ 	io::putchar(c);
+ }
+
+ fn void main()
+ {
+ 	Formatter f;
+ 	f.init(&stdout_fn);
+ 	any[] args = { &&1, &&"one" };
+ 	f.vprintf("%d is %s\n", args)!!; // 1 is one
+ }
+ ```
+
+ @param format : "The printf-style format string"
+ @param anys : "The values to format"
+ @return "The number of characters printed"
+ @return? INVALID_FORMAT, NOT_ENOUGH_ARGUMENTS, INVALID_ARGUMENT, INTERNAL_BUFFER_EXCEEDED : "If the format string and arguments don't match, or a fault from the output function"
+*>
 fn sz? Formatter.vprintf(&self, String format, any[] anys)
 {
 	self.first_fault = {};
@@ -309,6 +464,14 @@ fn sz? Formatter.vprintf(&self, String format, any[] anys)
 	return total_len;
 }
 
+<*
+ Send a single character to the output function.
+
+ If the output function fails, the first fault recorded by the formatter is returned.
+
+ @param c : "The character to print"
+ @return "Always 1"
+*>
 fn sz? Formatter.print_char(&self, char c)
 {
 	if (catch err = self.out_fn(self.data, c))
@@ -320,6 +483,12 @@ fn sz? Formatter.print_char(&self, char c)
 	return 1;
 }
 
+<*
+ Print a string as-is, without any formatting. If no output function is set, output is discarded.
+
+ @param str : "The string to print"
+ @return "The number of bytes printed"
+*>
 fn sz? Formatter.print(&self, String str)
 {
 	if (!self.out_fn)
