@@ -26,12 +26,27 @@ import std::math;
 //   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //   ----------------------------------------------------------------------
 
+<* Number of 32-bit limbs in the big-number buffer used by `decfloat`. *>
 const KMAX = 128;
+<* Index mask for the circular limb buffer used by `decfloat`. *>
 const MASK = KMAX - 1;
+<* Number of base-1e9 limbs needed to represent `B1B_MAX`. *>
 const B1B_DIG = 2;
+<* 2^53 - 1 split into base-1e9 limbs, used by `decfloat` when rounding. *>
 const uint[2] B1B_MAX = { 9007199, 254740991 };
 
 <*
+ Parse an unsigned decimal float such as `12.5e-3`, rounding correctly to `$bits` of mantissa.
+ Internal helper for the `String.to_float`/`String.to_double` family; the string must already
+ be trimmed, with any sign removed and passed as `sign`.
+
+ @param [in] chars : "The digits, an optional `.` and an optional `e`/`E` exponent"
+ @param $bits : "Mantissa bits of the target type"
+ @param $emin : "Minimum binary exponent of the target type"
+ @param sign : "1 or -1"
+ @return "The parsed value"
+ @return? MALFORMED_FLOAT : "If chars is not a valid decimal float"
+ @return? FLOAT_OUT_OF_RANGE : "If the value overflows or underflows the target type"
  @require chars.len > 0
 *>
 macro double? decfloat(char[] chars, int $bits, int $emin, int sign)
@@ -328,6 +343,19 @@ macro double? decfloat(char[] chars, int $bits, int $emin, int sign)
 	return math::scalbn(y, e2);
 }
 
+<*
+ Parse an unsigned hexadecimal float such as `1.8p3`, rounding to `$bits` of mantissa.
+ Internal helper for the `String.to_float`/`String.to_double` family; `chars` is the text after
+ the `0x` prefix, with any sign removed and passed as `sign`.
+
+ @param [in] chars : "Hex digits, an optional `.` and an optional `p`/`P` binary exponent"
+ @param $bits : "Mantissa bits of the target type"
+ @param $emin : "Minimum binary exponent of the target type"
+ @param sign : "1 or -1"
+ @return "The parsed value"
+ @return? MALFORMED_FLOAT : "If chars is not a valid hexadecimal float"
+ @return? FLOAT_OUT_OF_RANGE : "If the value overflows or underflows the target type"
+*>
 macro double? hexfloat(char[] chars, int $bits, int $emin, int sign)
 {
 	double scale = 1;

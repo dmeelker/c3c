@@ -3,6 +3,16 @@ import std::math;
 
 <*
  StringIterator walks a UTF-8 encoded string one codepoint at a time.
+ Create one with `String.iterator()`.
+
+ #### Example:
+ ```
+ StringIterator it = "añ".iterator();
+ Char32 a = it.next()!!; // 'a'
+ Char32 p = it.peek()!!; // 0xF1 (ñ), without advancing
+ Char32 n = it.next()!!; // 0xF1
+ bool more = it.has_next(); // false
+ ```
 *>
 struct StringIterator
 {
@@ -22,6 +32,7 @@ fn void StringIterator.reset(&self)
 
 <*
  Advance the iterator and return the next codepoint.
+ On invalid UTF-8 the iterator does not advance, so repeated calls keep returning the fault.
 
  @param [&inout] self
  @return "The next codepoint"
@@ -58,6 +69,8 @@ fn Char32? StringIterator.peek(&self)
 }
 
 <*
+ Check whether there are more codepoints left to read.
+
  @param [&in] self
  @return "true if there are more bytes left to decode"
 *>

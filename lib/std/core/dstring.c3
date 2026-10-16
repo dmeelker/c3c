@@ -5,6 +5,16 @@ import std::io, std::math;
  The DString offers a dynamic string builder: an owning, growable, allocator-backed buffer of
  characters. A zero-initialized DString is valid and lazily initializes itself (using the temp
  allocator) on first use.
+
+ #### Example:
+ ```
+ DString s;
+ s.init(mem);
+ defer s.free();
+ s.append("Hello");
+ s.appendf(", %s!", "world");
+ io::printn(s); // Hello, world!
+ ```
 *>
 typedef DString (OutStream) = DStringOpaque*;
 typedef DStringOpaque = void;
@@ -14,6 +24,13 @@ const sz MIN_CAPACITY @private = 16;
 
 <*
  Initialize the DString with a particular allocator.
+
+ #### Example:
+ ```
+ DString s;
+ s.init(mem, 64);
+ defer s.free();
+ ```
 
  @param [&inout] allocator : "The allocator to use"
  @param capacity : "Starting capacity, defaults to MIN_CAPACITY and cannot be smaller"
@@ -47,7 +64,7 @@ fn DString DString.tinit(&self, sz capacity = MIN_CAPACITY)
  Create a new, empty DString with at least the given starting capacity.
 
  @param [&inout] allocator : "The allocator to use"
- @param capacity : "Starting capacity, defaults to MIN_CAPACITY and cannot be smaller"
+ @param capacity : "Starting capacity, raised to MIN_CAPACITY if smaller"
  @return "The newly created DString"
 
  @require [capacity] capacity >= 0 : "Capacity must be positive"
@@ -60,7 +77,7 @@ fn DString new_with_capacity(Allocator allocator, sz capacity)
 <*
  Create a new, empty DString with at least the given starting capacity, using the temp allocator.
 
- @param capacity : "Starting capacity, defaults to MIN_CAPACITY and cannot be smaller"
+ @param capacity : "Starting capacity, raised to MIN_CAPACITY if smaller"
  @return "The newly created DString"
 
  @require [capacity] capacity >= 0 : "Capacity must be positive"
@@ -69,6 +86,13 @@ fn DString temp_with_capacity(sz capacity) => new_with_capacity(tmem, capacity) 
 
 <*
  Create a new DString, initialized with a copy of `c`.
+
+ #### Example:
+ ```
+ DString s = dstring::new(mem, "abc");
+ defer s.free();
+ s.append_char('d'); // s is now "abcd"
+ ```
 
  @param [&inout] allocator : "The allocator to use"
  @param [in] c : "The initial contents of the DString"
@@ -88,6 +112,15 @@ fn DString new(Allocator allocator, String c = "")
 
 <*
  Create a new DString, initialized with a copy of `s`, using the temp allocator.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s = dstring::temp("abc");
+ 	s.append("def"); // s is now "abcdef"
+ };
+ ```
 
  @param [in] s : "The initial contents of the DString"
  @return "The newly created DString"
@@ -116,6 +149,16 @@ fn void DString.replace_char(self, char ch, char replacement)
  Replace every occurrence of `needle` with `replacement` in place. If `needle` is empty,
  `replacement` is inserted before, between, and after every character. A no-op on an
  uninitialized DString unless `needle` is also empty, in which case `replacement` is appended.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s = dstring::temp("one two one");
+ 	s.replace("one", "1"); // s is now "1 two 1"
+ 	s.replace("", "-");    // s is now "-1- -t-w-o- -1-"
+ };
+ ```
 
  @param [in] needle : "The substring to search for"
  @param [in] replacement : "The string to replace each match with"
@@ -187,7 +230,17 @@ fn void DString.replace(&self, String needle, String replacement)
 }
 
 <*
- Concatenate `self` and `b` into a newly allocated DString.
+ Concatenate `self` and `b` into a newly allocated DString. Neither input is modified.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString a = dstring::temp("foo");
+ 	DString b = dstring::temp("bar");
+ 	DString c = a.concat(tmem, b); // "foobar"
+ };
+ ```
 
  @param [&inout] allocator : "The allocator to use for the new DString"
  @param [in] b : "The DString to append after self"
@@ -213,7 +266,17 @@ fn DString DString.tconcat(self, DString b) => self.concat(tmem, b);
 <*
  Return a null-terminated view of the DString's contents. The returned pointer is only valid
  as long as the DString isn't mutated or freed; a null pointer is never returned (an
- uninitialized DString yields an empty, null-terminated string).
+ uninitialized DString yields an empty, null-terminated string). May reallocate the buffer
+ to fit the terminator, which invalidates earlier views.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s = dstring::temp("hello");
+ 	ZString z = s.zstr_view(); // usable with C APIs until s changes
+ };
+ ```
 
  @return "A null-terminated view of the current contents"
 *>
@@ -253,8 +316,17 @@ fn sz DString.len(&self) @operator(len)
 }
 
 <*
- Truncate (or, degenerately, extend without initializing) the DString to `new_size` bytes.
- A no-op on an uninitialized DString.
+ Truncate the DString to `new_size` bytes, keeping its capacity. A no-op on an uninitialized
+ DString.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s = dstring::temp("hello");
+ 	s.chop(2); // s is now "he"
+ };
+ ```
 
  @param new_size : "The new length in bytes"
  @require [new_size] (usz)new_size <= (usz)self.len() : "new_size must be between 0 and self.len()"
@@ -304,6 +376,16 @@ fn char* DString.char_ref(&self, sz index) @operator(&[])
 
 <*
  Append a sequence of UTF32 codepoints, encoding each as UTF8.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s;
+ 	Char32[] cps = { 'h', 'i', 0x20AC };
+ 	sz n = s.append_utf32(cps); // 5: s is now "hi€"
+ };
+ ```
 
  @param chars : "The codepoints to append"
  @return "The number of bytes appended"
@@ -355,6 +437,16 @@ fn void DString.append_char_repeat(&self, char c, sz times)
  Append `c` `times` times. Dispatches to a specialized implementation for `String` and `char`,
  falling back to repeated calls to `append` for any other appendable type.
 
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s;
+ 	s.append_repeat('-', 3);  // "---"
+ 	s.append_repeat("ab", 2); // "---abab"
+ };
+ ```
+
  @param c : "The value to append"
  @param times : "How many times to append it"
 
@@ -402,6 +494,15 @@ fn void DString.append_string_repeat(&self, String c, sz times)
 <*
  Append a single UTF32 codepoint, encoded as UTF8.
 
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s;
+ 	sz n = s.append_char32(0x20AC); // 3: s is now "€"
+ };
+ ```
+
  @param c : "The codepoint to append"
  @return "The number of bytes appended (1-4)"
 
@@ -427,7 +528,16 @@ fn sz DString.append_char32(&self, Char32 c)
 fn DString DString.tcopy(&self) => self.copy(tmem);
 
 <*
- Clone this DString into a new one.
+ Clone this DString into a new one with the same contents and capacity.
+
+ #### Example:
+ ```
+ DString a = dstring::new(mem, "abc");
+ defer a.free();
+ DString b = a.copy(mem);
+ defer b.free();
+ b.append('d'); // a is still "abc", b is "abcd"
+ ```
 
  @param [&inout] allocator : "The allocator to use for the copy"
  @return "A new, independently-allocated copy"
@@ -463,7 +573,16 @@ fn ZString DString.copy_zstr(self, Allocator allocator) @nodiscard
 }
 
 <*
- Copy the contents into a newly allocated String.
+ Copy the contents into a newly allocated String. The copy is also null-terminated.
+
+ #### Example:
+ ```
+ DString s = dstring::new(mem, "abc");
+ String copy = s.copy_str(mem);
+ s.free();
+ defer free(copy);
+ io::printn(copy); // abc
+ ```
 
  @param [&inout] allocator : "The allocator to use"
  @return "A newly allocated copy of the contents"
@@ -483,6 +602,16 @@ fn String DString.tcopy_str(self) @nodiscard => self.copy_str(tmem) @inline;
 <*
  Compare the contents of two DStrings for equality. Two uninitialized (or empty) DStrings
  are considered equal.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString a = dstring::temp("abc");
+ 	DString b = dstring::temp("abc");
+ 	bool same = a.equals(b); // true
+ };
+ ```
 
  @param [in] other_string : "The DString to compare against"
  @return "true if both have the same contents"
@@ -520,7 +649,18 @@ fn void DString.free(&self)
 
 <*
  Lexicographically compare two DStrings byte-by-byte, treating an uninitialized DString as
- empty and always less than a non-empty one.
+ empty and always less than a non-empty one. A string sorts before any longer string it is a
+ prefix of.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	bool a = dstring::temp("abc").less(dstring::temp("abd")); // true
+ 	bool b = dstring::temp("ab").less(dstring::temp("abc"));  // true
+ 	bool c = dstring::temp("b").less(dstring::temp("abc"));   // false
+ };
+ ```
 
  @param [in] other_string : "The DString to compare against"
  @return "true if self sorts before other_string"
@@ -569,6 +709,16 @@ fn void DString.append_bytes(&self, char[] bytes)
 
 <*
  Decode the contents as UTF8 and return them as a newly allocated array of UTF32 codepoints.
+ Panics if the contents are not valid UTF8.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s = dstring::temp("hi€");
+ 	Char32[] cps = s.copy_utf32(tmem); // { 'h', 'i', 0x20AC }
+ };
+ ```
 
  @param [&inout] allocator : "The allocator to use"
  @return "A newly allocated array of codepoints"
@@ -647,6 +797,15 @@ fn void DString.append_char(&self, char c)
 <*
  Delete the inclusive range `[start, end]`.
 
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s = dstring::temp("abcdef");
+ 	s.delete_range(1, 3); // s is now "aef"
+ };
+ ```
+
  @param start : "The first index to delete"
  @param end : "The last index to delete (inclusive)"
 
@@ -661,6 +820,16 @@ fn void DString.delete_range(&self, sz start, sz end)
 
 <*
  Delete `len` characters starting at `start`.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s = dstring::temp("abcdef");
+ 	s.delete(1, 2); // s is now "adef"
+ 	s.delete(0);    // s is now "def"
+ };
+ ```
 
  @param start : "The first index to delete"
  @param len : "The number of characters to delete, defaults to 1"
@@ -689,7 +858,20 @@ fn void DString.delete(&self, sz start, sz len = 1)
 
 <*
  Append a value of any appendable type: `char`, `ichar`, `DString`, `String`, `Char32`, or any
- type convertible to `Char32` or `String`.
+ type convertible to `Char32` or `String`. Other types are a compile-time error; use `appendf`
+ for those.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s;
+ 	s.append("abc");
+ 	s.append('d');
+ 	s.append((Char32)0x20AC);
+ 	s.append(dstring::temp("!")); // s is now "abcd€!"
+ };
+ ```
 
  @param value : "The value to append"
 *>
@@ -749,11 +931,19 @@ macro void DString.append_inline(&self, value)
 }
 
 <*
- Insert a string at `index`, shifting any existing content after it forward. `s` may safely
- alias (be a view into) `self`'s own contents.
+ Insert a string at `index`, shifting any existing content after it forward.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s = dstring::temp("held");
+ 	s.insert_chars_at(2, "llo wor"); // s is now "hello world"
+ };
+ ```
 
  @param index : "The index to insert at"
- @param s : "The string to insert"
+ @param [in] s : "The string to insert"
 
  @require [index] (usz)index <= (usz)self.len() : "Insert must be between 0 and self.length()"
 *>
@@ -853,6 +1043,16 @@ fn sz DString.insert_char32_at(&self, sz index, Char32 c)
 <*
  Insert a sequence of UTF32 codepoints at `index`, encoding each as UTF8.
 
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s = dstring::temp("ac");
+ 	Char32[] cps = { 'b', 0x20AC };
+ 	sz n = s.insert_utf32_at(1, cps); // 4: s is now "ab€c"
+ };
+ ```
+
  @param index : "The index to insert at"
  @param [in] chars : "The codepoints to insert"
  @return "The number of bytes inserted"
@@ -888,6 +1088,16 @@ fn sz DString.insert_utf32_at(&self, sz index, Char32[] chars)
  Insert a value of any insertable type at `index`: `char`, `ichar`, `DString`, `String`,
  `Char32`, or any type convertible to `Char32` or `String`.
 
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s = dstring::temp("ad");
+ 	s.insert_at(1, "bc"); // "abcd"
+ 	s.insert_at(0, '>');  // ">abcd"
+ };
+ ```
+
  @param index : "The index to insert at"
  @param value : "The value to insert"
 
@@ -922,9 +1132,19 @@ macro void DString.insert_at(&self, sz index, value)
  Append the result of formatting `format` with `args`, printf-style. Lazily initializes an
  uninitialized DString using the temp allocator.
 
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s;
+ 	s.appendf("%d + %d = %d", 1, 2, 3); // s is now "1 + 2 = 3"
+ };
+ ```
+
  @param [in] format : "The format string"
  @param args : "The arguments referenced by the format string"
  @return "The number of bytes appended"
+ @return? io::INVALID_FORMAT, io::NOT_ENOUGH_ARGUMENTS, io::INVALID_ARGUMENT, io::INTERNAL_BUFFER_EXCEEDED : "If the format string and arguments don't match"
 *>
 fn sz? DString.appendf(&self, String format, args...) @maydiscard @format(1)
 {
@@ -937,9 +1157,19 @@ fn sz? DString.appendf(&self, String format, args...) @maydiscard @format(1)
 <*
  Same as `appendf`, but also appends a trailing newline.
 
- @param format : "The format string"
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s;
+ 	s.appendfn("x = %d", 42); // s is now "x = 42\n"
+ };
+ ```
+
+ @param [in] format : "The format string"
  @param args : "The arguments referenced by the format string"
  @return "The number of bytes appended, including the trailing newline"
+ @return? io::INVALID_FORMAT, io::NOT_ENOUGH_ARGUMENTS, io::INVALID_ARGUMENT, io::INTERNAL_BUFFER_EXCEEDED : "If the format string and arguments don't match"
 *>
 fn sz? DString.appendfn(&self, String format, args...) @maydiscard @format(1)
 {
@@ -956,6 +1186,15 @@ fn sz? DString.appendfn(&self, String format, args...) @maydiscard @format(1)
 
 <*
  Join an array of strings into a new DString, separated by `joiner`.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	String[] parts = { "a", "b", "c" };
+ 	DString s = dstring::join(tmem, parts, ", "); // "a, b, c"
+ };
+ ```
 
  @param [&inout] allocator : "The allocator to use"
  @param [in] s : "The strings to join"
@@ -980,6 +1219,13 @@ fn DString join(Allocator allocator, String[] s, String joiner) @nodiscard
 	return res;
 }
 
+<*
+ Formatter output callback that appends `c` to the DString pointed to by `data`. Used by
+ `appendf`; pass it to `Formatter.init` to format directly into a DString.
+
+ @param [inout] data : "A pointer to the DString to append to"
+ @param c : "The character to append"
+*>
 fn void? append_fn(void* data, char c)
 {
 	DString* s = data;
@@ -987,7 +1233,17 @@ fn void? append_fn(void* data, char c)
 }
 
 <*
- Reverse the DString's contents in place. A no-op on an uninitialized DString.
+ Reverse the DString's contents in place, byte by byte (multi-byte UTF8 sequences are not
+ preserved). A no-op on an uninitialized DString.
+
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	DString s = dstring::temp("abc");
+ 	s.reverse(); // s is now "cba"
+ };
+ ```
 *>
 fn void DString.reverse(self)
 {
@@ -1003,6 +1259,9 @@ fn void DString.reverse(self)
 	}
 }
 
+<*
+ @return "The backing StringData, or null if the DString is uninitialized"
+*>
 macro StringData* DString.data(self)
 {
 	return (StringData*)self;
@@ -1029,8 +1288,20 @@ fn void DString.reserve(&self, sz addition) @inline
 <*
  Read the entire contents of `reader` and append them.
 
+ #### Example:
+ ```
+ mem::@pool()
+ {
+ 	ByteReader reader;
+ 	reader.init("hello");
+ 	DString s;
+ 	s.read_from_stream(&reader)!!; // 5: s is now "hello"
+ };
+ ```
+
  @param [&inout] reader : "The stream to read from"
  @return "The total number of bytes read and appended"
+ @return? io::read_buffer! : "If reading from the stream fails"
 *>
 fn sz? DString.read_from_stream(&self, InStream reader)
 {

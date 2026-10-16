@@ -2,7 +2,12 @@ module std::core::string;
 import std::io, std::math;
 import std::core::string::conv;
 
+<*
+ String is a slice of UTF-8 encoded chars. It is not necessarily zero terminated.
 
+ String literals convert to String implicitly, and are zero terminated, so a literal
+ can safely be cast to a ZString.
+*>
 typedef String @constinit @weak = inline char[];
 <*
  ZString is a pointer to a zero terminated array of chars.
@@ -46,7 +51,13 @@ excuse
 <*
  Create a pointer to an UTF32 encoded string at compile time.
 
+ #### Example:
+ ```
+ Char32* s = @wstring32("héllo");
+ ```
+
  @param $string : "The string to encode"
+ @return "A pointer to the zero terminated UTF32 data"
 *>
 macro Char32* @wstring32(String $string) @builtin
 {
@@ -56,7 +67,13 @@ macro Char32* @wstring32(String $string) @builtin
 <*
  Create a slice of an UTF32 encoded string at compile time.
 
+ #### Example:
+ ```
+ Char32[] s = @char32("héllo"); // s.len == 5
+ ```
+
  @param $string : "The string to encode"
+ @return "The UTF32 codepoints, not including the zero terminator"
 *>
 macro Char32[] @char32(String $string) @builtin
 {
@@ -66,7 +83,13 @@ macro Char32[] @char32(String $string) @builtin
 <*
  Create a WString (an UTF16 encoded string) at compile time.
 
+ #### Example:
+ ```
+ WString s = @wstring("hello");
+ ```
+
  @param $string : "The string to encode"
+ @return "A pointer to the zero terminated UTF16 data"
 *>
 macro WString @wstring(String $string) @builtin
 {
@@ -76,7 +99,13 @@ macro WString @wstring(String $string) @builtin
 <*
  Create a slice of an UTF16 encoded string at compile time.
 
+ #### Example:
+ ```
+ Char16[] s = @char16("hello"); // s.len == 5
+ ```
+
  @param $string : "The string to encode"
+ @return "The UTF16 units, not including the zero terminator"
 *>
 macro Char16[] @char16(String $string) @builtin
 {
@@ -85,6 +114,11 @@ macro Char16[] @char16(String $string) @builtin
 
 <*
  Create a compile-time formatted string constant.
+
+ #### Example:
+ ```
+ String s = @sprintf("%s-%d", "abc", 3); // "abc-3"
+ ```
 
  @param $format : "The compile-time format string"
  @return "The formatted string, computed at compile time"
@@ -96,7 +130,13 @@ macro String @sprintf(String $format, ...) @builtin @const
 <*
  Return a temporary ZString created using the formatting function.
 
+ #### Example:
+ ```
+ ZString z = string::tformat_zstr("%d items", 3); // "3 items"
+ ```
+
  @param [in] fmt : `The formatting string`
+ @return "A zero terminated string allocated on the temp allocator"
 *>
 fn ZString tformat_zstr(String fmt, args...) @format(0)
 {
@@ -106,11 +146,19 @@ fn ZString tformat_zstr(String fmt, args...) @format(0)
 }
 
 <*
- Return a new String created using the formatting function, this function will implicitly
- use the temp allocator.
+ Return a new String created using the formatting function.
+
+ The string is first built on the temp allocator (inside a `@pool`), then copied to `allocator`.
+
+ #### Example:
+ ```
+ String s = string::format(mem, "%s=%d", "x", 42); // "x=42"
+ defer free(s);
+ ```
 
  @param [&inout] allocator : `The allocator to use`
  @param [in] fmt : `The formatting string`
+ @return "The formatted string, safe to convert to a ZString"
 *>
 fn String format(Allocator allocator, String fmt, args...) @format(1) => @pool()
 {
@@ -120,10 +168,19 @@ fn String format(Allocator allocator, String fmt, args...) @format(1) => @pool()
 }
 
 <*
- Return a new String created using the formatting function, the resulting string must fit the buffer.
+ Return a new String created using the formatting function, writing into the given buffer.
+
+ The result must fit the buffer, otherwise this panics. No zero terminator is added.
+
+ #### Example:
+ ```
+ char[32] buf;
+ String s = string::bformat(&buf, "%d + %d", 1, 2); // "1 + 2"
+ ```
 
  @param [inout] buffer : `The buffer to use`
  @param [in] fmt : `The formatting string`
+ @return "A slice of the buffer containing the formatted string"
 *>
 fn String bformat(char[] buffer, String fmt, args...) @format(1)
 {
@@ -144,7 +201,13 @@ fn String bformat(char[] buffer, String fmt, args...) @format(1)
 <*
  Return a temporary String created using the formatting function.
 
+ #### Example:
+ ```
+ String s = string::tformat("%s, %s!", "Hello", "World"); // "Hello, World!"
+ ```
+
  @param [in] fmt : `The formatting string`
+ @return "The formatted string allocated on the temp allocator"
 *>
 fn String tformat(String fmt, args...) @format(0)
 {
@@ -156,10 +219,15 @@ fn String tformat(String fmt, args...) @format(0)
 <*
  Check if a character is in a set.
 
+ #### Example:
+ ```
+ bool b = string::char_in_set('b', "abc"); // true
+ ```
+
  @param c : `the character to check`
  @param [in] set : `String containing the characters`
- @pure
  @return `True if a character is in the set`
+ @pure
 *>
 macro bool char_in_set(char c, String set)
 {
@@ -169,6 +237,15 @@ macro bool char_in_set(char c, String set)
 
 <*
  Join together an array of strings via a "joiner" sequence, which is inserted between each element.
+
+ An empty array yields an empty (but allocated) string.
+
+ #### Example:
+ ```
+ String[] parts = { "a", "bb", "ccc" };
+ String s = string::join(mem, parts, ", "); // "a, bb, ccc"
+ defer s.free(mem);
+ ```
 
  @param [&inout] allocator : "The allocator to use."
  @param [in] s : "An array of strings to join in sequence."
@@ -208,10 +285,16 @@ macro String tjoin(String[] s, String joiner) => join(tmem, s, joiner);
 <*
  Replace all instances of one substring with a different string.
 
+ #### Example:
+ ```
+ String s = "a-b-c".replace(mem, "-", "+"); // "a+b+c"
+ defer s.free(mem);
+ ```
+
  @param [in] self
+ @param [&inout] allocator : `The allocator to use for the String`
  @param [in] needle : `The string to be replaced`
  @param [in] new_str : `The replacement string`
- @param [&inout] allocator : `The allocator to use for the String`
  @return "The new string with the elements replaced"
 *>
 fn String String.replace(self, Allocator allocator, String needle, String new_str) @nodiscard => @pool()
@@ -230,6 +313,11 @@ fn String String.replace(self, Allocator allocator, String needle, String new_st
 
 <*
  Replace all instances of one substring with a different string, allocating the new string on the temp allocator.
+
+ #### Example:
+ ```
+ String s = "some text, some more".treplace("some", "all"); // "all text, all more"
+ ```
 
  @param [in] self
  @param [in] needle : `The string to be replaced`
@@ -254,10 +342,16 @@ fn String String.treplace(self, String needle, String new_str)
 <*
  Remove characters from the front and end of a string.
 
+ #### Example:
+ ```
+ String s = "  hello\n".trim(); // "hello"
+ String t = "--x--".trim("-"); // "x"
+ ```
+
  @param [in] self : `The string to trim`
  @param [in] to_trim : `The set of characters to trim, defaults to whitespace`
- @pure
  @return `a substring of the string passed in`
+ @pure
 *>
 fn String String.trim(self, String to_trim = " \n\t\r\f\v")
 {
@@ -265,12 +359,17 @@ fn String String.trim(self, String to_trim = " \n\t\r\f\v")
 }
 
 <*
- Remove characters from the front and end of a string.
+ Remove characters in an ASCII charset from the front and end of a string.
+
+ #### Example:
+ ```
+ String s = " \tvalue ".trim_charset(); // "value"
+ ```
 
  @param [in] self : `The string to trim`
  @param to_trim : `The set of characters to trim, defaults to whitespace`
- @pure
  @return `a substring of the string passed in`
+ @pure
 *>
 fn String String.trim_charset(self, AsciiCharset to_trim = ascii::WHITESPACE_SET)
 {
@@ -284,10 +383,15 @@ fn String String.trim_charset(self, AsciiCharset to_trim = ascii::WHITESPACE_SET
 <*
  Remove characters from the front of a string.
 
+ #### Example:
+ ```
+ String s = "  hello ".trim_left(); // "hello "
+ ```
+
  @param [in] self : `The string to trim`
  @param [in] to_trim : `The set of characters to trim, defaults to whitespace`
- @pure
  @return `a substring of the string passed in`
+ @pure
 *>
 fn String String.trim_left(self, String to_trim = " \n\t\r\f\v")
 {
@@ -301,10 +405,15 @@ fn String String.trim_left(self, String to_trim = " \n\t\r\f\v")
 <*
  Remove characters from the end of a string.
 
+ #### Example:
+ ```
+ String s = "  hello ".trim_right(); // "  hello"
+ ```
+
  @param [in] self : `The string to trim`
  @param [in] to_trim : `The set of characters to trim, defaults to whitespace`
- @pure
  @return `a substring of the string passed in`
+ @pure
 *>
 fn String String.trim_right(self, String to_trim = " \n\t\r\f\v")
 {
@@ -314,12 +423,17 @@ fn String String.trim_right(self, String to_trim = " \n\t\r\f\v")
 }
 
 <*
- Check if the String starts with the prefix.
+ Check if the String starts with the prefix. An empty prefix always matches.
+
+ #### Example:
+ ```
+ bool b = "foobar".starts_with("foo"); // true
+ ```
 
  @param [in] self
  @param [in] prefix
- @pure
  @return `'true' if the string starts with the prefix`
+ @pure
 *>
 fn bool String.starts_with(self, String prefix)
 {
@@ -331,10 +445,15 @@ fn bool String.starts_with(self, String prefix)
 <*
  Compare two strings case-insensitively (ASCII only), lexicographically.
 
+ #### Example:
+ ```
+ int c = "Hello".compare_to_ignore_case("hello"); // 0
+ ```
+
  @param [in] self
  @param [in] s
+ @return "-1 if self < s, 0 if equal, 1 if self > s"
  @pure
- @return "negative if self < s, 0 if equal, positive if self > s"
 *>
 fn int String.compare_to_ignore_case(self, String s)
 {
@@ -348,12 +467,17 @@ fn int String.compare_to_ignore_case(self, String s)
 }
 
 <*
- Compare two strings byte-by-byte, lexicographically.
+ Compare two strings byte-by-byte, lexicographically. A shorter string sorts before a longer one it is a prefix of.
+
+ #### Example:
+ ```
+ int c = "abc".compare_to("abd"); // -1
+ ```
 
  @param [in] self
  @param [in] s
+ @return "-1 if self < s, 0 if equal, 1 if self > s"
  @pure
- @return "negative if self < s, 0 if equal, positive if self > s"
 *>
 fn int String.compare_to(self, String s)
 {
@@ -367,12 +491,17 @@ fn int String.compare_to(self, String s)
 }
 
 <*
- Check if the String ends with the suffix.
+ Check if the String ends with the suffix. An empty suffix always matches.
+
+ #### Example:
+ ```
+ bool b = "image.png".ends_with(".png"); // true
+ ```
 
  @param [in] self
  @param [in] suffix
- @pure
  @return `'true' if the string ends with the suffix`
+ @pure
 *>
 fn bool String.ends_with(self, String suffix)
 {
@@ -384,10 +513,15 @@ fn bool String.ends_with(self, String suffix)
 <*
  Strip the front of the string if the prefix exists.
 
+ #### Example:
+ ```
+ String s = "0x1F".strip_prefix("0x"); // "1F"
+ ```
+
  @param [in] self
  @param [in] prefix
+ @return `the substring with the prefix removed, or the string itself if it lacks the prefix`
  @pure
- @return `the substring with the prefix removed`
 *>
 fn String String.strip_prefix(self, String prefix)
 {
@@ -398,10 +532,15 @@ fn String String.strip_prefix(self, String prefix)
 <*
  Strip the end of the string if the suffix exists.
 
+ #### Example:
+ ```
+ String s = "file.txt".strip_suffix(".txt"); // "file"
+ ```
+
  @param [in] self
  @param [in] suffix
+ @return `the substring with the suffix removed, or the string itself if it lacks the suffix`
  @pure
- @return `the substring with the suffix removed`
 *>
 fn String String.strip_suffix(self, String suffix)
 {
@@ -413,12 +552,23 @@ fn String String.strip_suffix(self, String suffix)
 <*
  Split a string into parts, e.g "a|b|c" split with "|" yields { "a", "b", "c" }
 
+ Only the `String[]` is allocated; the elements are slices of the original string.
+ When `max` is reached, the last element holds the unsplit remainder.
+
+ #### Example:
+ ```
+ String[] parts = "a|b|c".split(mem, "|"); // { "a", "b", "c" }
+ defer free(parts);
+ String[] two = "a|b|c".split(mem, "|", max: 2); // { "a", "b|c" }
+ defer free(two);
+ ```
+
  @param [in] self
+ @param [&inout] allocator : "The allocator to use for the String[]"
  @param [in] delimiter
  @param max : "Max number of elements, 0 means no limit, defaults to 0"
  @param skip_empty : "True to skip empty elements"
- @param [&inout] allocator : "The allocator to use for the String[]"
-
+ @return "The parts of the string"
  @require delimiter.len > 0 : "The delimiter must be at least 1 character long"
  @ensure return.len > 0 || skip_empty
 *>
@@ -466,21 +616,32 @@ fn String[] String.split(self, Allocator allocator, String delimiter, sz max = 0
  @param [in] delimiter
  @param max : "Max number of elements, 0 means no limit, defaults to 0"
  @param skip_empty : "True to skip empty elements"
+ @return "The parts of the string, in a temp allocated slice"
 *>
 fn String[] String.tsplit(s, String delimiter, sz max = 0, bool skip_empty = false) => s.split(tmem, delimiter, max, skip_empty) @inline;
 
+<* Returned by `String.split_to_buffer` when the parts do not fit the buffer. *>
 excuse BUFFER_EXCEEDED;
 
 <*
- Split a string into parts, e.g "a|b|c" split with "|" yields { "a", "b", "c" }
+ Split a string into parts, writing them into the given buffer instead of allocating,
+ e.g "a|b|c" split with "|" yields { "a", "b", "c" }
+
+ #### Example:
+ ```
+ String[4] buf;
+ String[] parts = "a|b|c".split_to_buffer("|", &buf)!!; // { "a", "b", "c" }
+ ```
 
  @param [in] s
  @param [in] delimiter
- @param [inout] buffer
+ @param [inout] buffer : "The buffer to store the parts in"
  @param max : "Max number of elements, 0 means no limit, defaults to 0"
+ @param skip_empty : "True to skip empty elements"
+ @return "A slice of the buffer holding the parts"
+ @return? BUFFER_EXCEEDED : `If there are more elements than would fit the buffer`
  @require delimiter.len > 0 : "The delimiter must be at least 1 character long"
  @ensure return.len > 0 || skip_empty
- @return? BUFFER_EXCEEDED : `If there are more elements than would fit the buffer`
 *>
 fn String[]? String.split_to_buffer(s, String delimiter, String[] buffer, sz max = 0, bool skip_empty = false)
 {
@@ -515,12 +676,17 @@ fn String[]? String.split_to_buffer(s, String delimiter, String[] buffer, sz max
 }
 
 <*
- Check if a substring is found in the string.
+ Check if a substring is found in the string. An empty substring is always found.
+
+ #### Example:
+ ```
+ bool b = "hello world".contains("o w"); // true
+ ```
 
  @param [in] s
  @param [in] substr : "The string to look for."
- @pure
  @return "true if the string contains the substring, false otherwise"
+ @pure
 *>
 fn bool String.contains(s, String substr)
 {
@@ -532,8 +698,8 @@ fn bool String.contains(s, String substr)
 
  @param [in] s
  @param character : "The character to look for."
- @pure
  @return "true if the string contains the character, false otherwise"
+ @pure
 *>
 fn bool String.contains_char(s, char character)
 {
@@ -545,10 +711,15 @@ fn bool String.contains_char(s, char character)
 
  If the substring has zero length, the number of matches is zero.
 
+ #### Example:
+ ```
+ sz n = "aaaa".count("aa"); // 2
+ ```
+
  @param [in] self : "The string to search"
  @param [in] substr : "The string to look for."
- @pure
  @return "The number of times matched"
+ @pure
 *>
 fn sz String.count(self, String substr)
 {
@@ -573,14 +744,19 @@ fn sz String.count(self, String substr)
 }
 
 <*
- Find the index of the first incidence of a string.
+ Find the index of the first incidence of a character.
+
+ #### Example:
+ ```
+ sz i = "hello".index_of_char('l')!!; // 2
+ ```
 
  @param [in] self
  @param character : "The character to look for"
- @pure
- @ensure return < self.len
  @return "the index of the character"
  @return? NOT_FOUND : "if the character cannot be found"
+ @ensure return < self.len
+ @pure
 *>
 fn sz? String.index_of_char(self, char character)
 {
@@ -592,14 +768,19 @@ fn sz? String.index_of_char(self, char character)
 }
 
 <*
- Find the index of the first incidence of a one of the chars.
+ Find the index of the first character in the string that is one of the given chars.
+
+ #### Example:
+ ```
+ sz i = "key=value;".index_of_chars("=;")!!; // 3
+ ```
 
  @param [in] self
  @param [in] characters : "The characters to look for"
- @pure
+ @return "the index of the first matching character"
+ @return? NOT_FOUND : "if none of the characters can be found"
  @ensure return < self.len
- @return "the index of the character"
- @return? NOT_FOUND : "if the character cannot be found"
+ @pure
 *>
 fn sz? String.index_of_chars(String self, char[] characters)
 {
@@ -615,15 +796,20 @@ fn sz? String.index_of_chars(String self, char[] characters)
 }
 
 <*
- Find the index of the first incidence of a character.
+ Find the index of the first incidence of a character, starting at `start_index`.
+
+ #### Example:
+ ```
+ sz i = "a.b.c".index_of_char_from('.', 2)!!; // 3
+ ```
 
  @param [in] self
  @param character : "The character to look for"
  @param start_index : "The index to start with, may exceed max index."
- @pure
- @ensure return < self.len
  @return "the index of the character"
  @return? NOT_FOUND : "if the character cannot be found starting from the start_index"
+ @ensure return < self.len
+ @pure
 *>
 fn sz? String.index_of_char_from(self, char character, sz start_index)
 {
@@ -637,14 +823,19 @@ fn sz? String.index_of_char_from(self, char character, sz start_index)
 }
 
 <*
- Find the index of the first incidence of a character starting from the end.
+ Find the index of the last incidence of a character, searching from the end.
+
+ #### Example:
+ ```
+ sz i = "a/b/c".rindex_of_char('/')!!; // 3
+ ```
 
  @param [in] self
  @param character : "the character to find"
- @pure
- @ensure return < self.len
  @return "the index of the character"
  @return? NOT_FOUND : "if the character cannot be found"
+ @ensure return < self.len
+ @pure
 *>
 fn sz? String.rindex_of_char(self, char character)
 {
@@ -656,15 +847,19 @@ fn sz? String.rindex_of_char(self, char character)
 }
 
 <*
- Find the index of the first incidence of a string.
+ Find the index of the first incidence of a string. An empty substring is found at index 0.
+
+ #### Example:
+ ```
+ sz i = "hello world".index_of("world")!!; // 6
+ ```
 
  @param [in] self
  @param [in] substr
  @return "the index of the substring"
  @return? NOT_FOUND : "if the substring cannot be found"
-
- @pure
  @ensure (!substr && return == 0) || return < self.len
+ @pure
 *>
 fn sz? String.index_of(self, String substr)
 {
@@ -682,15 +877,19 @@ fn sz? String.index_of(self, String substr)
 }
 
 <*
- Find the index of the last incidence of a string.
+ Find the index of the last incidence of a string. An empty substring is found at `self.len`.
+
+ #### Example:
+ ```
+ sz i = "abcabc".rindex_of("bc")!!; // 4
+ ```
 
  @param [in] self
  @param [in] substr
  @return "the index of the substring"
  @return? NOT_FOUND : "if the substring cannot be found"
-
- @pure
  @ensure (substr.len == 0 && return == self.len) || return < self.len
+ @pure
 *>
 fn sz? String.rindex_of(self, String substr)
 {
@@ -711,10 +910,16 @@ fn sz? String.rindex_of(self, String substr)
  Compare two ZStrings for byte-for-byte equality, stopping at the first zero terminator.
  A null ZString is considered different from any non-null ZString.
 
+ #### Example:
+ ```
+ ZString a = "abc";
+ ZString b = "abc";
+ bool same = a == b; // true
+ ```
+
  @param [in] self
  @param [in] other
  @return "true if both ZStrings have the same content"
-
  @pure
 *>
 fn bool ZString.eq(self, ZString other) @operator(==)
@@ -745,9 +950,14 @@ fn String ZString.str_view(self)
 <*
  Count the number of UTF-8 codepoints in a zero-terminated string.
 
+ #### Example:
+ ```
+ ZString z = "héllo";
+ sz n = z.char_len(); // 5, while z.len() is 6
+ ```
+
  @param [&in] str
  @return "The number of UTF-8 codepoints, which may be fewer than the byte length"
-
  @pure
 *>
 fn sz ZString.char_len(str)
@@ -762,9 +972,10 @@ fn sz ZString.char_len(str)
 }
 
 <*
+ Return the length of the ZString in bytes. This scans the string for the terminator.
+
  @param [&in] self
  @return "The number of bytes before the zero terminator"
-
  @pure
 *>
 fn sz ZString.len(self)
@@ -775,9 +986,10 @@ fn sz ZString.len(self)
 }
 
 <*
+ Return the length of the WString in UTF-16 units. This scans the string for the terminator.
+
  @param [&in] self
  @return "The number of Char16 units before the zero terminator"
-
  @pure
 *>
 fn sz WString.len(self)
@@ -790,9 +1002,15 @@ fn sz WString.len(self)
 <*
  Copy this string into a newly allocated, zero-terminated ZString.
 
+ #### Example:
+ ```
+ ZString z = "hello".zstr_copy(mem);
+ defer free(z);
+ ```
+
  @param [in] self
  @param [&inout] allocator
- @return "A ZString allocated using the allocator, must be released using `mem::free`"
+ @return "A zero terminated copy of the string"
 *>
 fn ZString String.zstr_copy(self, Allocator allocator)
 {
@@ -805,6 +1023,12 @@ fn ZString String.zstr_copy(self, Allocator allocator)
 
 <*
  Concatenate two strings into a newly allocated string.
+
+ #### Example:
+ ```
+ String s = "foo".concat(mem, "bar"); // "foobar"
+ defer s.free(mem);
+ ```
 
  @param [in] self
  @param [&inout] allocator
@@ -834,8 +1058,16 @@ fn ZString String.zstr_tcopy(self) => self.zstr_copy(tmem) @inline;
  sentinel, so that it safely can be converted to a ZString by a
  cast.
 
+ #### Example:
+ ```
+ String s = "hello".copy(mem);
+ defer s.free(mem);
+ ZString z = (ZString)s.ptr;
+ ```
+
  @param [in] self
  @param [&inout] allocator
+ @return "The copy of the string"
 *>
 fn String String.copy(self, Allocator allocator)
 {
@@ -886,7 +1118,13 @@ fn String ZString.tcopy(self)
 }
 
 <*
- Convert an UTF-8 string to UTF-16
+ Convert an UTF-8 string to UTF-16. The result is zero terminated.
+
+ #### Example:
+ ```
+ Char16[] w = "héllo".to_utf16(mem)!!; // w.len == 5
+ defer free(w);
+ ```
 
  @param [in] self
  @param [&inout] allocator
@@ -908,6 +1146,12 @@ fn Char16[]? String.to_temp_utf16(self) => self.to_utf16(tmem);
 <*
  Convert an UTF-8 string to a zero-terminated UTF-16 WString.
 
+ #### Example:
+ ```
+ WString w = "hello".to_wstring(mem)!!;
+ defer free(w);
+ ```
+
  @param [in] self
  @param [&inout] allocator
  @return "The WString, allocated using the given allocator"
@@ -922,7 +1166,13 @@ fn WString? String.to_wstring(self, Allocator allocator)
 fn WString? String.to_temp_wstring(self) => self.to_wstring(tmem);
 
 <*
- Convert an UTF-8 string to UTF-32.
+ Convert an UTF-8 string to UTF-32. The result is zero terminated.
+
+ #### Example:
+ ```
+ Char32[] cps = "héllo".to_utf32(mem)!!; // cps.len == 5, cps[1] == 0xE9
+ defer free(cps);
+ ```
 
  @param [in] self
  @param [&inout] allocator
@@ -942,7 +1192,13 @@ fn Char32[]? String.to_utf32(self, Allocator allocator)
 fn Char32[]? String.to_temp_utf32(self) => self.to_utf32(tmem);
 
 <*
- Convert a string to ASCII lower case in place.
+ Convert a string to ASCII lower case in place. The string must be writable, so not a literal.
+
+ #### Example:
+ ```
+ String s = "HeLLo".tcopy();
+ s.convert_to_lower(); // s == "hello"
+ ```
 
  @param [inout] self
  @pure
@@ -954,6 +1210,12 @@ fn void String.convert_to_lower(self)
 
 <*
  Returns a string converted to ASCII lower case.
+
+ #### Example:
+ ```
+ String s = "HeLLo".to_lower_copy(mem); // "hello"
+ defer s.free(mem);
+ ```
 
  @param [in] self
  @param [&inout] allocator
@@ -973,7 +1235,13 @@ fn String String.to_lower_tcopy(self)
 }
 
 <*
- Convert a string to ASCII upper case.
+ Convert a string to ASCII upper case in place. The string must be writable, so not a literal.
+
+ #### Example:
+ ```
+ String s = "HeLLo".tcopy();
+ s.convert_to_upper(); // s == "HELLO"
+ ```
 
  @param [inout] self
  @pure
@@ -985,6 +1253,12 @@ fn void String.convert_to_upper(self)
 
 <*
  Returns a string converted to ASCII upper case.
+
+ #### Example:
+ ```
+ String s = "HeLLo".to_upper_copy(mem); // "HELLO"
+ defer s.free(mem);
+ ```
 
  @param [in] self
  @param [&inout] allocator
@@ -999,6 +1273,12 @@ fn String String.to_upper_copy(self, Allocator allocator)
 
 <*
  Returns a copy of the string with the first character converted to ASCII upper case.
+
+ #### Example:
+ ```
+ String s = "hello world".capitalize_copy(mem); // "Hello world"
+ defer s.free(mem);
+ ```
 
  @param [in] self
  @param [&inout] allocator
@@ -1015,11 +1295,17 @@ fn String String.capitalize_copy(self, Allocator allocator)
 }
 
 <*
- Convert a string from `snake_case` to PascalCase.
+ Convert a string from `snake_case` to PascalCase. Repeated, leading and trailing `_` are dropped.
+
+ #### Example:
+ ```
+ String s = "foo_bar".snake_to_pascal_copy(mem); // "FooBar"
+ defer s.free(mem);
+ ```
 
  @param [in] self
  @param [&inout] allocator
- @return `"FooBar" from "foo_bar" the resulting pointer may safely be cast to ZString.`
+ @return `The PascalCase string, the resulting pointer may safely be cast to ZString.`
 *>
 fn String String.snake_to_pascal_copy(self, Allocator allocator)
 {
@@ -1041,7 +1327,14 @@ fn String String.snake_to_pascal_copy(self, Allocator allocator)
 }
 
 <*
- Movifies the current string from `snake_case` to PascalCase.
+ Modifies the current string in place from `snake_case` to PascalCase, shortening it as needed.
+ The string must be writable, so not a literal.
+
+ #### Example:
+ ```
+ String s = "foo_bar".tcopy();
+ s.convert_snake_to_pascal(); // s == "FooBar"
+ ```
 
  @param [&inout] self
 *>
@@ -1064,11 +1357,17 @@ fn void String.convert_snake_to_pascal(&self)
 }
 
 <*
- Convert a string from `PascalCase` to `snake_case`.
+ Convert a string from `PascalCase` to `snake_case`. Runs of capitals are kept together as one word.
+
+ #### Example:
+ ```
+ String s = "HTTPServerError".pascal_to_snake_copy(mem); // "http_server_error"
+ defer s.free(mem);
+ ```
 
  @param [in] self
  @param [&inout] allocator
- @return `"foo_bar" from "FooBar" the resulting pointer may safely be cast to ZString.`
+ @return `The snake_case string, the resulting pointer may safely be cast to ZString.`
 *>
 fn String String.pascal_to_snake_copy(self, Allocator allocator) => @pool()
 {
@@ -1092,8 +1391,19 @@ fn String String.pascal_to_snake_copy(self, Allocator allocator) => @pool()
 
 
 <*
+ Create an iterator that decodes the string's UTF-8 codepoints one at a time.
+
+ #### Example:
+ ```
+ StringIterator it = "hé".iterator();
+ while (try c = it.next())
+ {
+ 	io::printfn("%d", c); // 104, then 233
+ }
+ ```
+
  @param [own] self
- @return "An iterator over the string's characters"
+ @return "An iterator over the string's codepoints"
 *>
 fn StringIterator String.iterator(self)
 {
@@ -1101,6 +1411,8 @@ fn StringIterator String.iterator(self)
 }
 
 <*
+ Alias for `String.to_upper_copy` using the temp allocator.
+
  @param [in] self
  @return `a temporary String converted to ASCII upper case.`
 *>
@@ -1110,7 +1422,14 @@ fn String String.to_upper_tcopy(self)
 }
 
 <*
- Convert an UTF-32 string to UTF-8.
+ Convert an UTF-32 string to UTF-8. The codepoints are not validated. The result is zero terminated.
+
+ #### Example:
+ ```
+ Char32[] cps = { 'a', 0xE9 };
+ String s = string::from_utf32(mem, cps)!!; // "aé"
+ defer s.free(mem);
+ ```
 
  @param [&inout] allocator
  @param [in] utf32
@@ -1127,7 +1446,8 @@ fn String? from_utf32(Allocator allocator, Char32[] utf32)
 }
 
 <*
- Convert raw UTF-32 bytes (not necessarily aligned) to UTF-8.
+ Convert raw UTF-32 bytes (not necessarily aligned) to UTF-8. The codepoints are not validated.
+ Trailing bytes that do not form a whole codepoint are ignored.
 
  @param [&inout] allocator
  @param [in] utf32 : "The raw bytes making up the UTF-32 codepoints"
@@ -1157,7 +1477,13 @@ fn String? from_utf32_bytes(Allocator allocator, char[] utf32, bool swap_endiane
 }
 
 <*
- Convert an UTF-16 string to UTF-8.
+ Convert an UTF-16 string to UTF-8. The result is zero terminated.
+
+ #### Example:
+ ```
+ String s = string::from_utf16(mem, @char16("hello"))!!; // "hello"
+ defer s.free(mem);
+ ```
 
  @param [&inout] allocator
  @param [in] utf16
@@ -1176,6 +1502,7 @@ fn String? from_utf16(Allocator allocator, Char16[] utf16)
 
 <*
  Convert raw UTF-16 bytes (not necessarily aligned) to UTF-8.
+ A trailing odd byte is ignored.
 
  @param [&inout] allocator
  @param [in] utf16 : "The raw bytes making up the UTF-16 units"
@@ -1209,6 +1536,12 @@ fn String? from_utf16_bytes(Allocator allocator, char[] utf16, bool swap_endiane
 <*
  Convert a zero-terminated UTF-16 WString to UTF-8.
 
+ #### Example:
+ ```
+ String s = string::from_wstring(mem, @wstring("hello"))!!; // "hello"
+ defer s.free(mem);
+ ```
+
  @param [&inout] allocator
  @param [&in] wstring
  @return "The UTF-8 string, allocated using the given allocator"
@@ -1228,9 +1561,16 @@ fn String? tfrom_wstring(WString wstring) => from_wstring(tmem, wstring) @inline
 fn String? tfrom_utf16(Char16[] utf16) => from_utf16(tmem, utf16) @inline;
 
 <*
+ Count the number of UTF-8 codepoints in the string. The string is not validated.
+
+ #### Example:
+ ```
+ sz n = "héllo".utf8_codepoints(); // 5, while the byte length is 6
+ ```
+
  @param [in] s
- @pure
  @return "The number of UTF-8 codepoints in the string, which may be fewer than the byte length"
+ @pure
 *>
 fn sz String.utf8_codepoints(s)
 {
@@ -1243,19 +1583,27 @@ fn sz String.utf8_codepoints(s)
 }
 
 <*
- Convert a number to a given base. If the base is not given, then
- it will be inferred from the number if the string starts with 0x 0o or 0b and the
- base is given as 10.
+ Parse a string as an integer of type `IntType`, in the given base.
 
- Furthermore it will skip any spaces before and after the number.
+ An optional `+` or `-` sign is accepted. When the base is 10 (the default), a `0x`, `0o`
+ or `0b` prefix switches the base to 16, 8 or 2. Blanks (spaces and tabs) before and
+ after the number are skipped.
+
+ #### Example:
+ ```
+ int a = string::to_integer{int}(" -42 ")!!; // -42
+ uint b = string::to_integer{uint}("0xFF")!!; // 255
+ int c = string::to_integer{int}("777", 8)!!; // 511
+ ```
 
  @param [in] self
- @param base : "The base to convert to"
- @require base > 0 && base <= 16 : "Unsupported base"
+ @param base : "The base to parse the number in"
+ @return "The parsed integer"
  @return? MALFORMED_INTEGER : "When the value has some illegal character"
  @return? INTEGER_OVERFLOW : "If the value does not fit in the given type"
- @return? EMPTY_STRING : "If the string was empty"
+ @return? EMPTY_STRING : "If the string was empty or only blanks"
  @return? NEGATIVE_VALUE : "If the type was unsigned, and the value had a - prefix"
+ @require base > 0 && base <= 16 : "Unsupported base"
 *>
 fn IntType? to_integer(String self, int base = 10) <IntType>
 {
@@ -1352,19 +1700,36 @@ fn uint? String.to_uint(self, int base = 10) => to_integer{uint}(self, base) @in
 <* Alias for `to_integer{ushort}`. See `to_integer` for parameters and faults. *>
 fn ushort? String.to_ushort(self, int base = 10) => to_integer{ushort}(self, base) @inline;
 
-<*
- Convert the string to a number in the range 0-255.
-*>
+<* Alias for `to_integer{char}`, parsing a number in the range 0-255. See `to_integer` for parameters and faults. *>
 fn char? String.to_char(self, int base = 10) => to_integer{char}(self, base) @inline;
 
 <*
+ Parse a string as a double.
+
+ Surrounding whitespace is ignored. Accepts an optional sign, decimal notation with an
+ optional exponent, hex floats with a `0x` prefix, and `infinity`/`nan` (all lower or all upper case).
+
+ #### Example:
+ ```
+ double d = "-1.5e3".to_double()!!; // -1500.0
+ ```
+
  @param [in] self
+ @return "The parsed value"
  @return? MALFORMED_FLOAT : "When the value has some illegal character"
  @return? FLOAT_OUT_OF_RANGE : "If the value does not fit in a double"
 *>
 fn double? String.to_double(self) => _string_to_real(self, double);
 <*
+ Parse a string as a float. Accepts the same formats as `String.to_double`.
+
+ #### Example:
+ ```
+ float f = " 0.25 ".to_float()!!; // 0.25
+ ```
+
  @param [in] self
+ @return "The parsed value"
  @return? MALFORMED_FLOAT : "When the value has some illegal character"
  @return? FLOAT_OUT_OF_RANGE : "If the value does not fit in a float"
 *>
@@ -1374,7 +1739,16 @@ fn float? String.to_float(self) => _string_to_real(self, float);
 <*
  Create a Splitter to track tokenizing of a string. Tokenize will turn "foo:bar::baz" into
  "foo", "bar" and "baz", if you want the empty string to be present, use `tokenize_all`
- instead.
+ instead. The tokens are slices of the original string, nothing is allocated.
+
+ #### Example:
+ ```
+ Splitter sp = "foo:bar::baz".tokenize(":");
+ while (try s = sp.next())
+ {
+ 	io::printn(s); // foo, bar, baz
+ }
+ ```
 
  @param [in] self
  @param [in] split : "The string to use for splitting"
@@ -1386,9 +1760,17 @@ fn Splitter String.tokenize(self, String split)
 }
 
 <*
- Create a Splitter to track tokenizing of a string. Tokenize will turn "foo:bar::baz" into
- "foo", "bar" and "baz", if you want the empty string to be present, use `tokenize_all`
- instead.
+ Create a Splitter to track tokenizing of a string, keeping empty tokens. This will turn
+ "foo:bar::baz:" into "foo", "bar", "", "baz" and "". Use `tokenize` to skip empty tokens.
+
+ #### Example:
+ ```
+ Splitter sp = "a::b:".tokenize_all(":", skip_last: true);
+ while (try s = sp.next())
+ {
+ 	io::printn(s); // a, (empty), b
+ }
+ ```
 
  @param [in] self
  @param [in] split : "The string to use for splitting"
@@ -1406,10 +1788,21 @@ fn Splitter String.tokenize_all(self, String split, bool skip_last = false)
 
 
 <*
- This macro will create a string description of a struct.
+ Create a string description of a struct (or any value), as printed by `io::print`.
+
+ A struct without a `to_format` method is printed member by member,
+ e.g. `{ x: 1, name: abc }`.
+
+ #### Example:
+ ```
+ int[3] values = { 1, 2, 3 };
+ String s = string::from_struct(mem, values); // "[1, 2, 3]"
+ defer s.free(mem);
+ ```
 
  @param [&inout] allocator : "The allocator to use"
  @param x : "The struct to create a description of"
+ @return "The description of the value"
 *>
 macro String from_struct(Allocator allocator, x)
 {
@@ -1423,9 +1816,10 @@ macro String from_struct(Allocator allocator, x)
 }
 
 <*
- This macro will create a temporary string description of a struct.
+ Alias for `string::from_struct` using the temp allocator.
 
  @param x : "The struct to create a description of"
+ @return "The description of the value"
 *>
 macro String tfrom_struct(x) => from_struct(tmem, x);
 
@@ -1437,6 +1831,7 @@ const uint SURROGATE_BITS @private = 10;
 const uint SURROGATE_LOW_VALUE @private = 0xDC00;
 const uint SURROGATE_HIGH_VALUE @private = 0xD800;
 
+<* How a `Splitter` treats empty tokens, see `String.tokenize` and `String.tokenize_all`. *>
 enum SplitterType
 {
 	TOKENIZE,
@@ -1445,7 +1840,7 @@ enum SplitterType
 }
 
 <*
- Splitter is handles tokenizing strings.
+ Splitter handles tokenizing strings. Create one with `String.tokenize` or `String.tokenize_all`.
 *>
 struct Splitter
 {
@@ -1467,6 +1862,11 @@ fn void Splitter.reset(&self)
 }
 
 <*
+ Check whether the splitter is exhausted, i.e. `next()` has returned the final token.
+
+ If the string ends with the delimiter and the trailing empty token is skipped (`tokenize`, or
+ `tokenize_all` with `skip_last`), this stays false even after `next()` returns `NO_MORE_ELEMENT`.
+
  @param [&in] self
  @return "true once `next()` has no more tokens to produce"
 *>
@@ -1477,6 +1877,14 @@ fn bool Splitter.at_end(&self)
 
 <*
  Advance the splitter and return the next token.
+
+ #### Example:
+ ```
+ Splitter sp = "a,b".tokenize(",");
+ String first = sp.next()!!; // "a"
+ String second = sp.next()!!; // "b"
+ bool done = @catch(sp.next()) == NO_MORE_ELEMENT; // true
+ ```
 
  @param [&inout] self
  @return "The next token"
