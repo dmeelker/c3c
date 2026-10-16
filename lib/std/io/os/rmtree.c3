@@ -2,6 +2,18 @@ module std::io::os @feat(POSIX);
 import std::io, std::os, libc;
 
 <*
+ Recursively delete a directory and everything in it.
+ Usually called through `path::rmtree`.
+
+ Only defined on POSIX and Windows. On Windows failures to delete individual
+ files are ignored and then surface as DIR_NOT_EMPTY when the directory itself
+ is removed.
+
+ @param dir : "The directory to delete"
+ @return? io::CANNOT_READ_DIR : "If the directory (or a subdirectory) can't be opened"
+ @return? io::FILE_NOT_DIR : "On POSIX, if the path is not a directory or does not exist"
+ @return? io::GENERAL_ERROR : "On POSIX, if a file in the tree can't be removed"
+ @return? io::DIR_NOT_EMPTY, io::BUSY, io::NO_PERMISSION : "If removing a directory fails, see `native_rmdir`"
  @require dir.len > 0
 *>
 fn void? native_rmtree(Path dir)
@@ -38,6 +50,20 @@ fn void? native_rmtree(Path dir)
 module std::io::os @feat(WIN32);
 import std::io, std::time, std::os;
 
+<*
+ Recursively delete a directory and everything in it.
+ Usually called through `path::rmtree`.
+
+ Only defined on POSIX and Windows. On Windows failures to delete individual
+ files are ignored and then surface as DIR_NOT_EMPTY when the directory itself
+ is removed.
+
+ @param path : "The directory to delete"
+ @return? io::CANNOT_READ_DIR : "If the directory (or a subdirectory) can't be opened"
+ @return? io::FILE_NOT_DIR : "On POSIX, if the path is not a directory or does not exist"
+ @return? io::GENERAL_ERROR : "On POSIX, if a file in the tree can't be removed"
+ @return? io::DIR_NOT_EMPTY, io::BUSY, io::NO_PERMISSION : "If removing a directory fails, see `native_rmdir`"
+*>
 fn void? native_rmtree(Path path)
 {
 	Win32_WIN32_FIND_DATAW find_data;

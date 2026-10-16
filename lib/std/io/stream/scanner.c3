@@ -1,5 +1,25 @@
 module std::io;
 
+<*
+ Scanner splits a stream into chunks separated by a pattern, such as lines.
+
+ It reads into a caller-supplied buffer and does not allocate. It does not own the
+ buffer or the wrapped stream, but `close` closes the wrapped stream.
+
+ #### Example:
+ ```
+ ByteReader src;
+ src.init("one\ntwo\nthree");
+ char[64] buf;
+ Scanner scanner;
+ scanner.init(&src, &buf);
+ while (try line = scanner.scan())
+ {
+ 	io::printn((String)line); // "one", then "two"
+ }
+ String rest = (String)scanner.flush(); // "three"
+ ```
+*>
 struct Scanner (InStream)
 {
 	CachedInStream wrapped_stream;
@@ -14,6 +34,7 @@ struct Scanner (InStream)
  including its pattern.
 
  @param [&in] stream : "The stream to read data from."
+ @param buffer : "The buffer to scan in, it must outlive the Scanner"
  @require buffer.len > 0 : "Non-empty buffer required."
 *>
 fn void Scanner.init(&self, InStream stream, char[] buffer)
@@ -24,6 +45,10 @@ fn void Scanner.init(&self, InStream stream, char[] buffer)
 
 <*
  Return and clear any remaining unscanned data.
+
+ Use it to get the trailing data after `scan` returns NOT_FOUND.
+
+ @return "A view into the scan buffer, valid until the next scan or read"
 *>
 fn char[] Scanner.flush(&self) @dynamic
 {
@@ -35,6 +60,9 @@ fn char[] Scanner.flush(&self) @dynamic
 	return buf;
 }
 
+<*
+ Close the wrapped stream, if it supports closing.
+*>
 fn void? Scanner.close(&self) @dynamic
 {
 	if (&self.wrapped_stream.close) return self.wrapped_stream.close();
@@ -42,6 +70,12 @@ fn void? Scanner.close(&self) @dynamic
 
 <*
  Scan the stream for the next split character and return data up to the match.
+
+ The pattern itself is consumed but not included in the result.
+
+ @param pattern : "The separator to split on, defaults to a newline"
+ @return "The data before the pattern, a view into the scan buffer valid until the next scan"
+ @return? NOT_FOUND : "If the pattern was not found before the end of the stream, or the data does not fit in the buffer"
  @require pattern.len > 0 : "Non-empty pattern required."
  @require self.buf.len > pattern.len : "Pattern too large."
 *>
@@ -94,6 +128,12 @@ macro sz? _scanner_refill(Scanner* self, buf) @private
 	return n ?: NOT_FOUND~;
 }
 
+<*
+ Read bytes, first from the unscanned buffered data and then from the wrapped stream.
+
+ @param [out] buffer : "The buffer to read into"
+ @return "The number of bytes read, or 0 if the end of the stream is reached"
+*>
 fn sz? Scanner.read(&self, char[] buffer) @dynamic
 {
 	sz n;
@@ -108,6 +148,12 @@ fn sz? Scanner.read(&self, char[] buffer) @dynamic
 	return n;
 }
 
+<*
+ Read a single byte, first from the unscanned buffered data and then from the wrapped stream.
+
+ @return "The byte read"
+ @return? io::EOF : "If the end of the stream is reached"
+*>
 fn char? Scanner.read_byte(&self) @dynamic
 {
 	if (self.pattern_idx < self.read_idx)

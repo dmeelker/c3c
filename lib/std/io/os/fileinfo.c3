@@ -1,6 +1,18 @@
 module std::io::os;
 import libc, std::os, std::io;
 
+<*
+ Fill `stat` with the libc `stat` information for `path`, following symbolic links.
+ Only available on Darwin, Linux, Android, the BSDs and Emscripten.
+
+ @param [out] stat : "The struct to fill"
+ @param path : "The file or directory to query"
+ @return? io::FILE_NOT_FOUND : "If the path does not exist"
+ @return? io::FILE_NOT_DIR : "If a path component is not a directory"
+ @return? io::NO_PERMISSION : "If access was denied, or on too many levels of symbolic links"
+ @return? io::NAME_TOO_LONG : "If the path is too long"
+ @return? io::FILE_NOT_VALID, io::GENERAL_ERROR, io::UNKNOWN_ERROR : "On other failures"
+*>
 fn void? native_stat(Stat* stat, String path) @feat(DARWIN, LINUX, ANDROID, BSD, EMSCRIPTEN) => @pool()
 {
 	int res = libc::stat(path.zstr_tcopy(), stat);
@@ -22,6 +34,19 @@ fn void? native_stat(Stat* stat, String path) @feat(DARWIN, LINUX, ANDROID, BSD,
 	}
 }
 
+<*
+ Return the size of a file in bytes.
+ Usually called through `file::get_size` / `path::file_size`.
+
+ On platforms without `stat` or Win32 support the file is opened and the
+ position at its end is returned.
+
+ @param path : "The file to query"
+ @return "The file size in bytes"
+ @return? io::FILE_IS_DIR : "If the path is a directory"
+ @return? io::FILE_NOT_FOUND, io::NO_PERMISSION : "If the file can't be found or accessed"
+ @return? io::PATH_COULD_NOT_BE_FOUND, io::BUSY : "On Windows, if a parent directory is missing or the file is in use"
+*>
 fn long? native_file_size(String path)
 {
 	$switch:
@@ -47,6 +72,13 @@ fn long? native_file_size(String path)
 
 }
 
+<*
+ Check whether a file or directory exists at `path`.
+ Usually called through `file::exists` / `path::exists`.
+
+ @param path : "The path to check"
+ @return "true if something exists at the path"
+*>
 fn bool native_file_or_dir_exists(String path)
 {
 	$switch:
@@ -74,6 +106,16 @@ fn bool native_file_or_dir_exists(String path)
 	$endswitch
 }
 
+<*
+ Check whether `path` is a regular file, following symbolic links.
+ Usually called through `file::is_file` / `path::is_file`.
+
+ On platforms without `stat` (including Windows) this returns true if the path
+ can be opened for reading.
+
+ @param path : "The path to check"
+ @return "true if the path is a file"
+*>
 fn bool native_is_file(String path)
 {
 	$switch:
@@ -93,6 +135,16 @@ fn bool native_is_file(String path)
 	$endswitch
 }
 
+<*
+ Check whether `path` is a directory, following symbolic links.
+ Usually called through `file::is_dir` / `path::is_dir`.
+
+ On platforms without `stat` (including Windows) this is true when the path
+ exists but `native_is_file` is false.
+
+ @param path : "The path to check"
+ @return "true if the path is a directory"
+*>
 fn bool native_is_dir(String path)
 {
 	$if env::DARWIN || env::LINUX || env::ANDROID || env::BSD_FAMILY || env::EMSCRIPTEN:
@@ -103,6 +155,16 @@ fn bool native_is_dir(String path)
 	$endif
 }
 
+<*
+ Check whether `path` itself is a symbolic link.
+ Usually called through `path::is_link`.
+
+ On Windows any reparse point (symlinks, junctions) counts as a link. On
+ platforms that are not supported this always returns false.
+
+ @param path : "The path to check"
+ @return "true if the path is a symbolic link"
+*>
 fn bool native_is_link(String path)
 {
 	$switch:
@@ -120,6 +182,16 @@ fn bool native_is_link(String path)
 	$endswitch
 }
 
+<*
+ Return the last modification time of a file or directory.
+ Usually called through `file::last_modified`.
+
+ @param path : "The path to query"
+ @return "The modification time, in seconds since the Unix epoch"
+ @return? io::FILE_NOT_FOUND, io::NO_PERMISSION : "If the path can't be found or accessed"
+ @return? io::PATH_COULD_NOT_BE_FOUND, io::BUSY : "On Windows, if a parent directory is missing or the file is in use"
+ @return? io::UNSUPPORTED_OPERATION : "On unsupported platforms"
+*>
 fn Time_t? native_get_modified_time(String path) => @pool()
 {
 	$switch:

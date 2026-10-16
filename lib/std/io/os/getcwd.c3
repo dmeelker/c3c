@@ -1,7 +1,20 @@
 module std::io::os;
 import libc, std::os;
 
+<* Largest buffer size (in characters) `getcwd` tries before giving up. *>
 const MAX_CWD = 64 * 1024;
+<*
+ Return the current working directory of the process as a newly allocated string.
+ Usually called through `path::cwd` / `path::tcwd`, which return a normalized `Path`.
+
+ The buffer starts at 256 characters and doubles while the OS reports it is
+ too small, up to `MAX_CWD`.
+
+ @param allocator : "The allocator for the returned string"
+ @return "The current working directory"
+ @return? io::GENERAL_ERROR : "If the OS call fails, or the path is longer than `MAX_CWD`"
+ @return? io::UNSUPPORTED_OPERATION : "On platforms that are neither POSIX nor Windows"
+*>
 macro String? getcwd(Allocator allocator)
 {
 	$switch:

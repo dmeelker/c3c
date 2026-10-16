@@ -1,6 +1,24 @@
 module std::io::os @feat(POSIX);
 import std::io, std::os;
 
+<*
+ List the entries of a single directory, excluding "." and "..".
+ Usually called through `path::ls`, which adds masking, recursion and rebasing.
+
+ The returned paths are entry names relative to `dir`. The `mask` argument is
+ currently ignored. On POSIX an empty `dir` lists the current directory, and
+ the `no_dirs` / `no_symlinks` filters rely on the file system reporting the
+ entry type.
+
+ @param dir : "The directory to list"
+ @param no_dirs : "Exclude directories from the result"
+ @param no_symlinks : "Exclude symbolic links (on Windows: all reparse points) from the result"
+ @param mask : "Unused"
+ @param allocator : "The allocator for the list and its paths"
+ @return "The list of entry names"
+ @return? io::CANNOT_READ_DIR : "If the directory can't be opened"
+ @return? io::FILE_NOT_DIR : "On POSIX, if `dir` is not a directory or does not exist"
+*>
 fn PathList? native_ls(Path dir, bool no_dirs, bool no_symlinks, String mask, Allocator allocator)
 {
 	PathList list;
@@ -28,6 +46,24 @@ fn PathList? native_ls(Path dir, bool no_dirs, bool no_symlinks, String mask, Al
 module std::io::os @feat(WIN32);
 import std::time, std::os, std::io;
 
+<*
+ List the entries of a single directory, excluding "." and "..".
+ Usually called through `path::ls`, which adds masking, recursion and rebasing.
+
+ The returned paths are entry names relative to `dir`. The `mask` argument is
+ currently ignored. On POSIX an empty `dir` lists the current directory, and
+ the `no_dirs` / `no_symlinks` filters rely on the file system reporting the
+ entry type.
+
+ @param dir : "The directory to list"
+ @param no_dirs : "Exclude directories from the result"
+ @param no_symlinks : "Exclude symbolic links (on Windows: all reparse points) from the result"
+ @param mask : "Unused"
+ @param allocator : "The allocator for the list and its paths"
+ @return "The list of entry names"
+ @return? io::CANNOT_READ_DIR : "If the directory can't be opened"
+ @return? io::FILE_NOT_DIR : "On POSIX, if `dir` is not a directory or does not exist"
+*>
 fn PathList? native_ls(Path dir, bool no_dirs, bool no_symlinks, String mask, Allocator allocator)
 {
 	PathList list;

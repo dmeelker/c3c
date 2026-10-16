@@ -2,24 +2,44 @@ module std::io::path;
 import std::collections::list, std::io::os;
 import std::os::win32;
 
+<* The path type of the current platform: `PathWin` on Windows, `PathPosix` elsewhere. *>
 alias Path = env::WIN32 ? PathWin : PathPosix;
+<* The path conventions of the current platform. *>
 const PathEnv DEFAULT_ENV = env::WIN32 ? PathEnv.WIN32 : PathEnv.POSIX;
 
+<* A path string, the common base of `PathWin` and `PathPosix`. *>
 typedef PathCommon = inline String;
+<* A path using Windows conventions (`\` separators, optional volume name). *>
 typedef PathWin = inline PathCommon;
+<* A path using POSIX conventions (`/` separators). *>
 typedef PathPosix = inline PathCommon;
 
+<* The path separator characters. *>
 constset PathSeparator : inline char
 {
 	WIN32 = '\\',
 	POSIX = '/'
 }
+<* The path separator of the current platform. *>
 const PathSeparator PREFERRED_SEPARATOR = env::WIN32 ? WIN32 : POSIX;
 
+<* A list of paths, as returned by `ls`. *>
 alias PathList = List { Path };
 
-excuse { INVALID_PATH, NO_PARENT }
+excuse
+{
+	<* The path is empty where not allowed, malformed, or contains reserved characters. *>
+	INVALID_PATH,
+	<* The path has no parent component. *>
+	NO_PARENT
+}
 
+<*
+ Get the current working directory.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The current working directory"
+*>
 fn Path? cwd(Allocator allocator)
 {
 	@pool()
@@ -28,20 +48,68 @@ fn Path? cwd(Allocator allocator)
 	};
 }
 
+<* A set of path conventions (separator, volume names, reserved characters) to parse paths with. *>
 enum PathEnv : (PathSeparator separator)
 {
 	WIN32 { WIN32 },
 	POSIX { POSIX }
 }
 
+<*
+ Check if the path refers to an existing directory.
+
+ @return "true if the path is a directory"
+*>
 fn bool is_dir(Path path) => os::native_is_dir(path);
+
+<*
+ Check if the path refers to an existing regular file.
+
+ @return "true if the path is a file"
+*>
 fn bool is_file(Path path) => os::native_is_file(path);
+
+<*
+ Check if the path refers to a symbolic link.
+
+ @return "true if the path is a symbolic link"
+*>
 fn bool is_link(Path path) => os::native_is_link(path);
+
+<*
+ Get the size of a file in bytes.
+
+ @return "The file size in bytes"
+*>
 fn long? file_size(Path path) => os::native_file_size(path);
+
+<*
+ Check if a file or directory exists at the path.
+
+ @return "true if the path exists"
+*>
 fn bool exists(Path path) => os::native_file_or_dir_exists(path);
+
+<*
+ Get the current working directory, allocated with the temp allocator.
+
+ @return "The current working directory"
+*>
 fn Path? tcwd() => cwd(tmem) @inline;
 
 <*
+ Change the current working directory.
+
+ #### Example:
+ ```
+ Path old = path::tcwd()!!;
+ path::chdir(path::temp_directory(tmem)!!)!!;
+ // ... work in the temp directory ...
+ path::chdir(old)!!;
+ ```
+
+ @param path : "The directory to change to, as a Path or String"
+ @return? io::FILE_NOT_FOUND, io::FILE_NOT_DIR, io::NO_PERMISSION, io::GENERAL_ERROR : "If the directory could not be entered (Windows only reports GENERAL_ERROR)"
  @require @is_pathlike(path) : "Expected a Path or String to chdir"
 *>
 macro void? chdir(path)
@@ -56,33 +124,166 @@ macro void? chdir(path)
 	$endif
 }
 
+<*
+ Get the directory for temporary files.
+
+ On POSIX this is the first of TMPDIR, TMP, TEMP or TEMPDIR that is set, otherwise "/tmp".
+
+ @param allocator : "The allocator for the returned path"
+ @return "The temp directory"
+*>
 fn Path? temp_directory(Allocator allocator) => os::native_temp_directory(allocator);
+
+<*
+ Get the home directory of the current user.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The home directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If it could not be determined on this platform"
+*>
 fn Path? home_directory(Allocator allocator) => os::native_home_directory(allocator);
+
+<*
+ Get the desktop directory of the current user.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The desktop directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If it could not be determined on this platform"
+*>
 fn Path? desktop_directory(Allocator allocator) => os::native_user_directory(allocator, DESKTOP);
+
+<*
+ Get the videos directory of the current user.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The videos directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If it could not be determined on this platform"
+*>
 fn Path? videos_directory(Allocator allocator) => os::native_user_directory(allocator, VIDEOS);
+
+<*
+ Get the music directory of the current user.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The music directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If it could not be determined on this platform"
+*>
 fn Path? music_directory(Allocator allocator) => os::native_user_directory(allocator, MUSIC);
+
+<*
+ Get the documents directory of the current user.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The documents directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If it could not be determined on this platform"
+*>
 fn Path? documents_directory(Allocator allocator) => os::native_user_directory(allocator, DOCUMENTS);
+
+<*
+ Get the screenshots directory of the current user. Only available on Windows.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The screenshots directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If it could not be determined on this platform"
+*>
 fn Path? screenshots_directory(Allocator allocator) => os::native_user_directory(allocator, SCREENSHOTS);
+
+<*
+ Get the saved games directory of the current user. Only available on Windows.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The saved games directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If it could not be determined on this platform"
+*>
 fn Path? saved_games_directory(Allocator allocator) => os::native_user_directory(allocator, SAVED_GAMES);
+
+<*
+ Get the downloads directory of the current user.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The downloads directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If it could not be determined on this platform"
+*>
 fn Path? downloads_directory(Allocator allocator) => os::native_user_directory(allocator, DOWNLOADS);
+
+<*
+ Get the pictures directory of the current user.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The pictures directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If it could not be determined on this platform"
+*>
 fn Path? pictures_directory(Allocator allocator) => os::native_user_directory(allocator, PICTURES);
+
+<*
+ Get the templates directory of the current user. Not available on Apple platforms.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The templates directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If it could not be determined on this platform"
+*>
 fn Path? templates_directory(Allocator allocator) => os::native_user_directory(allocator, TEMPLATES);
+
+<*
+ Get the public share directory of the current user. Not available on Windows.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The public share directory"
+ @return? io::PATH_COULD_NOT_BE_FOUND : "If it could not be determined on this platform"
+*>
 fn Path? public_share_directory(Allocator allocator) => os::native_user_directory(allocator, PUBLIC_SHARE);
 
+<*
+ Delete a file.
+
+ @param path : "The file to delete"
+ @return? io::FILE_NOT_FOUND : "If the file does not exist"
+ @return? io::FILE_CANNOT_DELETE : "If the file can't be deleted for any other reason"
+*>
 fn void? delete(PathCommon path) => os::native_remove(path) @inline;
 
+<*
+ Check at compile time if an expression is a Path (or other PathCommon) or a String.
+
+ @return "true if the expression can be used as a path"
+*>
 macro bool @is_pathlike(#path) @const => $Typeof(#path) == String ||| $defined(PathCommon c = #path);
 
+<*
+ Check if a character is a path separator: '/' always, and also '\' for WIN32.
+
+ @param c : "The character to test"
+ @param path_env : "The path conventions to use"
+ @return "true if c is a separator"
+*>
 macro bool is_separator(char c, PathEnv path_env = DEFAULT_ENV)
 {
 	return c == '/' || (c == '\\' && path_env == WIN32);
 }
 
+<*
+ Check if a character is a POSIX path separator ('/').
+
+ @return "true if c is '/'"
+*>
 macro bool is_posix_separator(char c) => c == '/';
+
+<*
+ Check if a character is a Windows path separator ('/' or '\').
+
+ @return "true if c is '/' or '\'"
+*>
 macro bool is_win32_separator(char c) =>  c == '/' || c == '\\';
 
 <*
- List directory contents.
+ List directory contents. The entries "." and ".." are not included.
+
+ #### Example:
+ ```
+ // All .c3 files below "src", e.g. "main.c3" and "sub/util.c3" ("sub\\util.c3" on Windows)
+ PathList files = path::ls(tmem, path::tnew("src")!!, no_dirs: true, mask: "*.c3", recursive: true)!!;
+ foreach (f : files) io::printn(f);
+ ```
 
  @param allocator : `The allocator for the returned list and paths`
  @param dir : `The directory to list`
@@ -92,6 +293,9 @@ macro bool is_win32_separator(char c) =>  c == '/' || c == '\\';
  @param recursive : `If true, recursively include entries in subdirectories`
  @param relative : `If true, return paths relative to dir. Defaults to true`
  @param rebase : `If non-empty, prepend this path to each returned entry`
+ @return "The list of entries"
+ @return? io::CANNOT_READ_DIR, io::FILE_NOT_DIR : "If the directory can't be opened or doesn't exist"
+ @return? io::UNSUPPORTED_OPERATION : "If listing directories is not supported on this platform"
 *>
 fn PathList? ls(Allocator allocator, Path dir, bool no_dirs = false, bool no_symlinks = false, String mask = "", bool recursive = false, bool relative = true, Path rebase = (Path)"")
 {
@@ -101,6 +305,7 @@ fn PathList? ls(Allocator allocator, Path dir, bool no_dirs = false, bool no_sym
 	return list;
 }
 
+<* Access permissions for a new directory. On POSIX NORMAL is 0o777 and the others 0o700; ignored on Windows. *>
 enum MkdirPermissions
 {
 	NORMAL,
@@ -111,10 +316,20 @@ enum MkdirPermissions
 <*
  Create a directory on a given path, optionally recursive.
 
- @param path : `The path to create`
- @require @is_pathlike(path) : "Expected a Path or String to chdir"
+ #### Example:
+ ```
+ path::mkdir("out/logs", recursive: true)!!; // true
+ path::mkdir("out")!!; // false, it already exists
+ ```
+
+ @param path : `The path to create, as a Path or String`
  @param recursive : `If directories in between should be created if they're missing, defaults to false`
  @param permissions : `The permissions to set on the directory`
+ @return "true if the directory was created, false if it already existed"
+ @return? INVALID_PATH : "If the path is empty or invalid"
+ @return? io::FILE_NOT_DIR : "If a file exists at the path"
+ @return? io::CANNOT_READ_DIR : "If the parent directory does not exist"
+ @require @is_pathlike(path) : "Expected a Path or String to mkdir"
 *>
 macro bool? mkdir(path, bool recursive = false, MkdirPermissions permissions = NORMAL)
 {
@@ -129,10 +344,17 @@ macro bool? mkdir(path, bool recursive = false, MkdirPermissions permissions = N
 <*
  Tries to delete directory, which must be empty.
 
+ #### Example:
+ ```
+ path::mkdir("scratch")!!;
+ path::rmdir(path::tnew("scratch")!!)!!; // true
+ ```
+
  @param path : `The path to delete`
- @require @is_pathlike(path) : "Expected a Path or String to chdir"
- @return `true if there was a directory to delete, false otherwise`
+ @return `true if there was a directory to delete, false otherwise. On Windows a missing directory in an existing parent gives GENERAL_ERROR instead`
  @return? INVALID_PATH : `if the path was invalid`
+ @return? io::DIR_NOT_EMPTY : "If the directory is not empty"
+ @require @is_pathlike(path) : "Expected a Path or String to rmdir"
 *>
 macro bool? rmdir(path)
 {
@@ -144,7 +366,11 @@ macro bool? rmdir(path)
 }
 
 <*
- Like [rmdir] but deletes a directory even if it contains items.
+ Like `rmdir` but deletes a directory even if it contains items.
+
+ @param path : "The directory to delete, including all its contents"
+ @return? INVALID_PATH : "If the path is empty"
+ @return? io::UNSUPPORTED_OPERATION : "If not supported on this platform"
 *>
 fn void? rmtree(Path path)
 {
@@ -157,8 +383,17 @@ fn void? rmtree(Path path)
 }
 
 <*
- Creates a new path.
+ Creates a new normalized path for the current platform, see `normalize`.
 
+ #### Example:
+ ```
+ Path p = path::new(mem, "foo/./bar/../baz")!!; // "foo/baz" on POSIX, "foo\\baz" on Windows
+ defer p.free(mem);
+ ```
+
+ @param allocator : "The allocator for the path"
+ @param path : "The path string, which is copied"
+ @return "The normalized path"
  @return? INVALID_PATH : `if the path was invalid`
 *>
 fn Path? new(Allocator allocator, String path)
@@ -169,25 +404,72 @@ fn Path? new(Allocator allocator, String path)
 <*
  Creates a new path using the temp allocator.
 
+ @param path : "The path string, which is copied"
+ @return "The normalized path"
  @return? INVALID_PATH : `if the path was invalid`
 *>
 fn Path? tnew(String path) => new(tmem, path);
 
+<*
+ Creates a new path from a UTF-16 zero-terminated string.
+
+ @param allocator : "The allocator for the path"
+ @param path : "The wide string to convert"
+ @return "The normalized path"
+ @return? INVALID_PATH : "If the path was invalid"
+*>
 fn Path? from_wstring(Allocator allocator, WString path) => @pool()
 {
 	return path::new(allocator, string::tfrom_wstring(path)!);
 }
 
+<*
+ Creates a new normalized path using Windows conventions, regardless of platform.
+
+ #### Example:
+ ```
+ PathWin p = path::for_windows(tmem, "C:/foo//bar")!!; // "C:\\foo\\bar"
+ ```
+
+ @param allocator : "The allocator for the path"
+ @param path : "The path string, which is copied"
+ @return "The normalized path"
+ @return? INVALID_PATH : "If the path was invalid"
+*>
 fn PathWin? for_windows(Allocator allocator, String path) => (PathWin)normalize(path.copy(allocator), WIN32);
 
+<*
+ Creates a new normalized path using POSIX conventions, regardless of platform.
+
+ #### Example:
+ ```
+ PathPosix p = path::for_posix(tmem, "/usr//lib/")!!; // "/usr/lib"
+ ```
+
+ @param allocator : "The allocator for the path"
+ @param path : "The path string, which is copied"
+ @return "The normalized path"
+ @return? INVALID_PATH : "If the path was invalid"
+*>
 fn PathPosix? for_posix(Allocator allocator, String path) => (PathPosix)normalize(path.copy(allocator), POSIX);
 
 
 <*
- Append one or more strings to the current path.
+ Append one or more strings to the current path, inserting separators as needed.
+ Empty parts are skipped and the result is normalized.
 
+ #### Example:
+ ```
+ PathWin p = path::for_windows(tmem, "C:\\foo")!!;
+ PathWin q = p.append(mem, "bar", "baz", extension: "txt")!!; // "C:\\foo\\bar\\baz.txt"
+ defer q.free(mem);
+ ```
+
+ @param allocator : "The allocator for the new path"
  @param [in] parts
  @param extension : "The optional extension to append, automatically inserting a '.' if necessary."
+ @return "A new path"
+ @return? INVALID_PATH : "If the resulting path is invalid"
 *>
 fn PathWin? PathWin.append(self, Allocator allocator, String... parts, String extension = "") => @pool()
 {
@@ -195,29 +477,81 @@ fn PathWin? PathWin.append(self, Allocator allocator, String... parts, String ex
 }
 
 <*
- Append one or more strings to the current path.
+ Append one or more strings to the current path, inserting separators as needed.
+ Empty parts are skipped and the result is normalized.
 
+ #### Example:
+ ```
+ PathPosix p = path::for_posix(tmem, "/usr")!!;
+ PathPosix q = p.append(mem, "lib", "libc", extension: "so")!!; // "/usr/lib/libc.so"
+ defer q.free(mem);
+ ```
+
+ @param allocator : "The allocator for the new path"
  @param [in] parts
  @param extension : "The optional extension to append, automatically inserting a '.' if necessary."
+ @return "A new path"
+ @return? INVALID_PATH : "If the resulting path is invalid"
 *>
 fn PathPosix? PathPosix.append(self, Allocator allocator, String... parts, String extension = "") => @pool()
 {
 	return _append_path(self, allocator, parts, extension, POSIX);
 }
 
+<*
+ Append one or more strings to the current path, using the temp allocator. See `PathPosix.append`.
+
+ @param [in] parts
+ @param extension : "The optional extension to append, automatically inserting a '.' if necessary."
+ @return "A new path"
+ @return? INVALID_PATH : "If the resulting path is invalid"
+*>
 fn PathPosix? PathPosix.tappend(self, String... parts, String extension = "") => self.append(tmem, ...parts, extension: extension);
+
+<*
+ Append one or more strings to the current path, using the temp allocator. See `PathWin.append`.
+
+ @param [in] parts
+ @param extension : "The optional extension to append, automatically inserting a '.' if necessary."
+ @return "A new path"
+ @return? INVALID_PATH : "If the resulting path is invalid"
+*>
 fn PathWin? PathWin.tappend(self, String... parts, String extension = "") => self.append(tmem, ...parts, extension: extension);
 
+<*
+ Check if the string is an absolute path on the current platform.
+
+ @return "true if the path is absolute"
+ @return? INVALID_PATH : "If the string is not a valid path"
+*>
 fn bool? String.is_absolute_path(self) => @pool()
 {
 	return tnew(self).is_absolute();
 }
 
+<*
+ Check if the path is absolute, that is, starts with '/'.
+
+ @return "true if the path is absolute"
+*>
 fn bool? PathPosix.is_absolute(self)
 {
 	return self.len > 0 && self[0] == PathSeparator.POSIX;
 }
 
+<*
+ Check if the path is absolute: it has a root directory, like "C:\foo",
+ "\foo" or "\\server\share\foo". "C:foo" is not absolute.
+
+ #### Example:
+ ```
+ path::for_windows(tmem, "C:\\foo")!!.is_absolute()!!; // true
+ path::for_windows(tmem, "C:foo")!!.is_absolute()!!; // false
+ ```
+
+ @return "true if the path is absolute"
+ @return? INVALID_PATH : "If the path has a malformed volume name"
+*>
 fn bool? PathWin.is_absolute(self)
 {
 	if (!self.len) return false;
@@ -227,11 +561,31 @@ fn bool? PathWin.is_absolute(self)
 }
 
 
+<*
+ Convert the string to an absolute path, resolving it against the current working directory.
+
+ @param allocator : "The allocator for the returned path"
+ @return "The absolute path"
+ @return? INVALID_PATH : "If the string is empty or not a valid path"
+*>
 fn Path? String.to_absolute_path(self, Allocator allocator) => @pool()
 {
 	return tnew(self).absolute(allocator);
 }
 
+<*
+ Get the absolute form of the path, resolving it against the current working directory.
+ An already absolute path is just copied.
+
+ #### Example:
+ ```
+ Path p = path::tnew("foo")!!.absolute(tmem)!!; // e.g. "/home/user/foo" on POSIX, "C:\\Users\\user\\foo" on Windows
+ ```
+
+ @param allocator : "The allocator for the returned path"
+ @return "The absolute path"
+ @return? INVALID_PATH : "If the path is empty or could not be resolved"
+*>
 fn Path? Path.absolute(self, Allocator allocator)
 {
 	if (!self.len) return INVALID_PATH~;
@@ -255,23 +609,97 @@ fn Path? Path.absolute(self, Allocator allocator)
 	$endif
 }
 
+<*
+ Get the last component of the path in the string, see `PathPosix.basename`.
+
+ #### Example:
+ ```
+ String name = "foo/bar.c3".file_basename(mem)!!; // "bar.c3"
+ defer free(name);
+ ```
+
+ @param allocator : "The allocator for the returned string"
+ @return "A copy of the last path component"
+ @return? INVALID_PATH : "If the string is not a valid path"
+*>
 fn String? String.file_basename(self, Allocator allocator) => @pool()
 {
 	return tnew(self).basename().copy(allocator);
 }
 
+<*
+ Get the last component of the path in the string, using the temp allocator.
+
+ @return "A copy of the last path component"
+ @return? INVALID_PATH : "If the string is not a valid path"
+*>
 fn String? String.file_tbasename(self) => self.file_basename(tmem);
 
+<*
+ Get the last component of the path, or "" if the path is only a root or volume.
+ This does not allocate, but returns a slice of the path itself.
+
+ #### Example:
+ ```
+ path::for_windows(tmem, "C:\\foo\\bar.c3")!!.basename(); // "bar.c3"
+ ```
+
+ @return "The last path component"
+*>
 fn String PathWin.basename(self) => _basename(self);
+
+<*
+ Get the last component of the path, or "" if the path is only "/".
+ This does not allocate, but returns a slice of the path itself.
+
+ #### Example:
+ ```
+ path::for_posix(tmem, "/foo/bar.c3")!!.basename(); // "bar.c3"
+ ```
+
+ @return "The last path component"
+*>
 fn String PathPosix.basename(self) => _basename(self);
 
+<*
+ Get the directory part of the path in the string, using the temp allocator.
+
+ @return `A copy of the directory part, or "." if there is none`
+ @return? INVALID_PATH : "If the string is not a valid path"
+*>
 fn String? String.path_tdirname(self) => self.path_dirname(tmem);
 
+<*
+ Get the directory part of the path in the string, see `PathPosix.dirname`.
+
+ #### Example:
+ ```
+ String dir = "foo/bar.c3".path_dirname(mem)!!; // "foo"
+ defer free(dir);
+ ```
+
+ @param allocator : "The allocator for the returned string"
+ @return `A copy of the directory part, or "." if there is none`
+ @return? INVALID_PATH : "If the string is not a valid path"
+*>
 fn String? String.path_dirname(self, Allocator allocator) => @pool()
 {
 	return tnew(self).dirname().copy(allocator);
 }
 
+<*
+ Get the path without its last component, or "." if it has no directory part.
+ This does not allocate, but returns a slice of the path itself.
+
+ #### Example:
+ ```
+ path::for_posix(tmem, "/foo/bar.c3")!!.dirname(); // "/foo"
+ path::for_posix(tmem, "/foo")!!.dirname(); // "/"
+ path::for_posix(tmem, "foo")!!.dirname(); // "."
+ ```
+
+ @return "The directory part of the path"
+*>
 fn String PathPosix.dirname(self)
 {
 	sz basename_start = start_of_base_name(self, POSIX)!!;
@@ -283,6 +711,18 @@ fn String PathPosix.dirname(self)
 	return self[:basename_start - 1];
 }
 
+<*
+ Get the path without its last component, or "." if it has no directory part.
+ The volume name and root are kept. This does not allocate, but returns a slice of the path itself.
+
+ #### Example:
+ ```
+ path::for_windows(tmem, "C:\\foo\\bar.c3")!!.dirname(); // "C:\\foo"
+ path::for_windows(tmem, "C:\\foo")!!.dirname(); // "C:\\"
+ ```
+
+ @return "The directory part of the path"
+*>
 fn String PathWin.dirname(self)
 {
 	sz basename_start = start_of_base_name(self, WIN32)!!;
@@ -320,10 +760,54 @@ fn bool PathPosix.has_extension(self, String extension) => _has_extension(self, 
 *>
 fn bool PathWin.has_extension(self, String extension) => _has_extension(self, extension);
 
+<*
+ Get the extension of the path's last component, without the leading '.'.
+ This does not allocate, but returns a slice of the path itself.
+
+ #### Example:
+ ```
+ path::for_windows(tmem, "C:\\foo\\a.tar.gz")!!.extension()!!; // "gz"
+ path::for_windows(tmem, "C:\\foo\\.gitignore")!!.extension()!!; // ""
+ ```
+
+ @return `The extension, or "" for names starting with '.' and no other '.'`
+ @return? NOT_FOUND : "If the last component contains no '.'"
+*>
 fn String? PathWin.extension(self) => _extension(self);
+
+<*
+ Get the extension of the path's last component, without the leading '.'.
+ This does not allocate, but returns a slice of the path itself.
+
+ #### Example:
+ ```
+ path::for_posix(tmem, "/foo/a.tar.gz")!!.extension()!!; // "gz"
+ path::for_posix(tmem, "/foo/.bashrc")!!.extension()!!; // ""
+ ```
+
+ @return `The extension, or "" for names starting with '.' and no other '.'`
+ @return? NOT_FOUND : "If the last component contains no '.'"
+*>
 fn String? PathPosix.extension(self) => _extension(self);
 
+<*
+ Get the volume name of the path, which is always "" for POSIX paths.
+
+ @return `Always ""`
+*>
 fn String PathPosix.volume_name(self) => "";
+
+<*
+ Get the volume name of the path, such as "C:" or "\\server\share", or "" if there is none.
+
+ #### Example:
+ ```
+ path::for_windows(tmem, "C:\\foo")!!.volume_name(); // "C:"
+ path::for_windows(tmem, "\\\\server\\share\\foo")!!.volume_name(); // "\\\\server\\share"
+ ```
+
+ @return "The volume name"
+*>
 fn String PathWin.volume_name(self)
 {
 	sz len = volume_name_len_win(self)!!;
@@ -331,13 +815,33 @@ fn String PathWin.volume_name(self)
 	return self[:len];
 }
 
+<*
+ Convert the string to a normalized path for the current platform, see `new`.
+
+ @param allocator : "The allocator for the path"
+ @return "The normalized path"
+ @return? INVALID_PATH : "If the path was invalid"
+*>
 fn Path? String.to_path(self, Allocator allocator) => new(allocator, self);
+
+<*
+ Convert the string to a normalized path for the current platform, using the temp allocator.
+
+ @return "The normalized path"
+ @return? INVALID_PATH : "If the path was invalid"
+*>
 fn Path? String.to_tpath(self) => new(tmem, self);
 
 
 <*
  Get the path of the parent. This does not allocate, but returns a slice
  of the path itself.
+
+ #### Example:
+ ```
+ path::for_windows(tmem, "C:\\foo\\bar")!!.parent()!!; // "C:\\foo"
+ path::for_windows(tmem, "C:\\foo")!!.parent()!!; // "C:\\"
+ ```
 
  @return `The parent of the path as a non-allocated path`
  @return? NO_PARENT : `if this path does not have a parent`
@@ -348,12 +852,37 @@ fn PathWin? PathWin.parent(self) => _parent(self);
  Get the path of the parent. This does not allocate, but returns a slice
  of the path itself.
 
+ #### Example:
+ ```
+ path::for_posix(tmem, "/foo/bar")!!.parent()!!; // "/foo"
+ path::for_posix(tmem, "/foo")!!.parent()!!; // "/"
+ ```
+
  @return `The parent of the path as a non-allocated path`
  @return? NO_PARENT : `if this path does not have a parent`
 *>
 fn PathPosix? PathPosix.parent(self) => _parent(self);
 
 
+<*
+ Normalize a path string in place: separators are converted to the preferred one
+ and repeated ones folded, "." components are removed, "name/.." pairs are collapsed
+ and a trailing separator is dropped. Leading ".." components of relative paths are kept.
+ A path that collapses to nothing (e.g. "a/..") becomes "."; an empty input stays empty.
+
+ #### Example:
+ ```
+ String s = "a//b/./c/../d/".tcopy();
+ path::normalize(s, PathEnv.POSIX)!!; // "a/b/d"
+ String w = "c:/foo/../bar".tcopy();
+ path::normalize(w, PathEnv.WIN32)!!; // "c:\\bar"
+ ```
+
+ @param path_str : "The path to normalize, which is modified"
+ @param path_env : "The path conventions to use"
+ @return "A slice of path_str with the normalized path"
+ @return? INVALID_PATH : "If the path contains reserved characters, a malformed volume name, or '..' above the root"
+*>
 fn String? normalize(String path_str, PathEnv path_env = DEFAULT_ENV)
 {
 	if (!path_str.len) return path_str;
@@ -475,14 +1004,55 @@ fn String? normalize(String path_str, PathEnv path_env = DEFAULT_ENV)
 	return path_str[:len];
 }
 
+<*
+ Get the root directory separator following the volume name, or "" if the path is relative.
+
+ #### Example:
+ ```
+ path::for_windows(tmem, "C:\\foo")!!.root_directory(); // "\\"
+ path::for_windows(tmem, "C:foo")!!.root_directory(); // ""
+ ```
+
+ @return `The root separator, "." for the path ".", or ""`
+*>
 fn String PathWin.root_directory(self) => _root_directory(self, WIN32);
+
+<*
+ Get the root of the path, or "" if the path is relative.
+
+ Note: this currently returns the first component including the leading '/', so "/usr/lib" gives "/usr".
+
+ @return `The root part of the path, "." for the path ".", or ""`
+*>
 fn String PathPosix.root_directory(self) => _root_directory(self, POSIX);
 
+<* A callback for `Path.walk`, receiving each path, whether it is a directory, and the user data. Return true to stop the walk. *>
 alias PathWalker = fn bool? (Path, bool is_dir, void*);
 
 <*
  Walk the path recursively. PathWalker is run on every file and
  directory found. Return true to abort the walk.
+
+ The paths passed to the walker are absolute and only valid during the call.
+
+ #### Example:
+ ```
+ fn bool? count_files(Path p, bool is_dir, void* data)
+ {
+ 	if (!is_dir) (*(int*)data)++;
+ 	return false;
+ }
+
+ fn void main()
+ {
+ 	int count;
+ 	path::tnew("src")!!.walk(&count_files, &count)!!;
+ }
+ ```
+
+ @param w : "The callback to run for every entry"
+ @param data : "User data passed to the callback"
+ @return "true if the walk was aborted by the callback, false otherwise"
 *>
 fn bool? Path.walk(self, PathWalker w, void* data)
 {
@@ -503,11 +1073,34 @@ fn bool? Path.walk(self, PathWalker w, void* data)
 	return false;
 }
 
+<* A callback for `traverse`, receiving each path, whether it is a directory, and the user data. Return true to stop the walk. *>
 alias TraverseCallback = fn bool? (Path, bool is_dir, any data);
 
 <*
  Walk the path recursively. TraverseCallback is run for every file and
  directory found. Return true to abort the walk.
+
+ The paths passed to the callback are absolute and only valid during the call.
+
+ #### Example:
+ ```
+ fn bool? count_entries(Path p, bool is_dir, any data)
+ {
+ 	(*anycast(data, int)!!)++;
+ 	return false;
+ }
+
+ fn void main()
+ {
+ 	int count;
+ 	path::traverse(path::tnew("src")!!, &count_entries, &count)!!;
+ }
+ ```
+
+ @param path : "The directory to walk"
+ @param callback : "The callback to run for every entry"
+ @param data : "User data passed to the callback"
+ @return "true if the walk was aborted by the callback, false otherwise"
 *>
 fn bool? traverse(Path path, TraverseCallback callback, any data)
 {
@@ -531,19 +1124,56 @@ fn bool? traverse(Path path, TraverseCallback callback, any data)
 	return false;
 }
 
+<*
+ Check if the path string ends with str. This is a plain string comparison.
+
+ @return "true if the path ends with str"
+*>
 fn bool PathCommon.has_suffix(self, String str) => self.ends_with(str);
 
+<*
+ Copy the path.
+
+ @param allocator : "The allocator for the copy"
+ @return "A copy of the path"
+*>
 fn PathWin PathWin.copy(self, Allocator allocator) => (PathWin)((String)self).copy(allocator);
+
+<*
+ Copy the path using the temp allocator.
+
+ @return "A copy of the path"
+*>
 fn PathWin PathWin.tcopy(self) => self.copy(tmem) @inline;
+
+<*
+ Copy the path.
+
+ @param allocator : "The allocator for the copy"
+ @return "A copy of the path"
+*>
 fn PathPosix PathPosix.copy(self, Allocator allocator) => (PathPosix)((String)self).copy(allocator);
+
+<*
+ Copy the path using the temp allocator.
+
+ @return "A copy of the path"
+*>
 fn PathPosix PathPosix.tcopy(self) => self.copy(tmem) @inline;
 
+<*
+ Free a path allocated with the given allocator.
+
+ @param allocator : "The allocator the path was allocated with"
+*>
 fn void PathCommon.free(self, Allocator allocator) => alloc::free(allocator, self.ptr);
 
+<* Characters that may not appear in a POSIX path component. *>
 const bool[256] RESERVED_PATH_CHAR_POSIX = {
 	[0] = true,
 	['/'] = true,
 };
+<* Characters that may not appear in a Windows path component. *>
 const bool[256] RESERVED_PATH_CHAR_WIN32 = {
 	[0..31] = true,
 	['>'] = true,
@@ -557,8 +1187,20 @@ const bool[256] RESERVED_PATH_CHAR_WIN32 = {
 	['*'] = true,
 };
 
+<*
+ Check if a character may not appear in a Windows path component.
+
+ @return "true if c is reserved"
+*>
 macro bool is_reserved_win32_path_char(char c) => RESERVED_PATH_CHAR_WIN32[c];
 
+<*
+ Check if a character may not appear in a path component, for example ':' on Windows.
+
+ @param c : "The character to test"
+ @param path_env : "The path conventions to use"
+ @return "true if c is reserved"
+*>
 macro bool is_reserved_path_char(char c, PathEnv path_env = DEFAULT_ENV)
 {
 	return path_env == PathEnv.WIN32

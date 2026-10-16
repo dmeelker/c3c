@@ -10,15 +10,26 @@
 module std::core::string;
 import std::io;
 
+<* Faults returned by `String.unescape` and `String.tunescape` on malformed input. *>
 excuse { INVALID_ESCAPE_SEQUENCE, UNTERMINATED_STRING, INVALID_HEX_ESCAPE, INVALID_UNICODE_ESCAPE }
 
 <*
  Escape a string by adding quotes and converting special characters to escape sequences.
 
+ `"`, `\\`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0` get a backslash escape; any other byte
+ outside printable ASCII (32-126) becomes `\xHH`, so non-ASCII UTF-8 is escaped byte by byte.
+
+ #### Example:
+ ```
+ String e = "say \"hi\"\n".escape(mem);
+ defer free(e);
+ // e is `"say \"hi\"\n"`
+ ```
+
  @param [in] s : "The string to escape"
  @param [&inout] allocator : "The allocator to use for the result"
  @param strip_quotes : "Do not include beginning and end quotes, defaults to false"
- @return "The escaped string with surrounding quotes, can safely be cast to ZString"
+ @return "The escaped string, quoted unless strip_quotes is set"
 *>
 fn String String.escape(String s, Allocator allocator, bool strip_quotes = false)
 {
@@ -40,19 +51,29 @@ fn String String.escape(String s, Allocator allocator, bool strip_quotes = false
 }
 
 <*
- Escape a string using the temp allocator.
+ Escape a string using the temp allocator. See `String.escape`.
+
+ #### Example:
+ ```
+ String e = "a\tb".tescape(strip_quotes: true); // `a\tb`
+ ```
 
  @param [in] s : "The string to escape"
  @param strip_quotes : "Do not include beginning and end quotes, defaults to false"
- @return "The escaped string with surrounding quotes"
+ @return "The escaped string, quoted unless strip_quotes is set"
 *>
 fn String String.tescape(String s, bool strip_quotes = false) => s.escape(tmem, strip_quotes);
 
 <*
- Calculate the length needed for an escaped string (including quotes).
+ Calculate the length of the string `String.escape` would produce.
+
+ #### Example:
+ ```
+ sz len = string::escape_len("a\tb"); // 6
+ ```
 
  @param [in] s : "The string to check"
- @param strip_quotes : "Whether quotes are added"
+ @param strip_quotes : "Set to true if quotes are not added, defaults to false"
  @return "The length needed for the escaped version"
 
  @pure
@@ -91,12 +112,25 @@ fn sz escape_len(String s, bool strip_quotes = false)
 <*
  Unescape a quoted string by parsing escape sequences.
 
+ Supports `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v`, `\0`, `\xHH`, `\uHHHH` (UTF-16
+ surrogate pairs as two `\u` escapes) and `\UHHHHHHHH`. Codepoints are written as UTF-8.
+
+ #### Example:
+ ```
+ String s = `"\x41é"`.unescape(mem)!!;
+ defer free(s);
+ // s is "Aé"
+ ```
+
  @param [in] s : "The quoted string to unescape"
  @param [&inout] allocator : "The allocator to use for the result"
  @param allow_unquoted : "Set to true to unescape strings not surrounded by quotes, defaults to false"
  @param lenient : "Be lenient with escapes, resolving unknown sequences to the escape character, defaults to false"
  @return "The unescaped string without quotes, safe to convert to ZString"
- @return? UNTERMINATED_STRING, INVALID_ESCAPE_SEQUENCE, INVALID_HEX_ESCAPE, INVALID_UNICODE_ESCAPE
+ @return? UNTERMINATED_STRING : "If the string is not quoted and allow_unquoted is false"
+ @return? INVALID_ESCAPE_SEQUENCE : "On a trailing lone backslash, or an unknown escape when lenient is false"
+ @return? INVALID_HEX_ESCAPE : "If an x escape is not followed by two hex digits"
+ @return? INVALID_UNICODE_ESCAPE : "If a u or U escape is malformed, or a surrogate pair is incomplete"
 *>
 fn String? String.unescape(String s, Allocator allocator, bool allow_unquoted = false, bool lenient = false)
 {
@@ -127,7 +161,12 @@ fn String? String.unescape(String s, Allocator allocator, bool allow_unquoted = 
 }
 
 <*
- Unescape a quoted string using the temp allocator.
+ Unescape a quoted string using the temp allocator. See `String.unescape`.
+
+ #### Example:
+ ```
+ String s = `a\qb`.tunescape(allow_unquoted: true, lenient: true)!!; // "aqb"
+ ```
 
  @param [in] s : "The quoted string to unescape"
  @param allow_unquoted : "Set to true to unescape strings not surrounded by quotes, defaults to false"
@@ -138,7 +177,12 @@ fn String? String.unescape(String s, Allocator allocator, bool allow_unquoted = 
 fn String? String.tunescape(String s, bool allow_unquoted = false, bool lenient = false) => s.unescape(tmem, allow_unquoted, lenient);
 
 <*
- Check if a character needs to be escaped in a string literal.
+ Check if a character needs to be escaped in a string literal, matching what `String.escape` escapes.
+
+ #### Example:
+ ```
+ bool b = string::needs_escape('\n'); // true
+ ```
 
  @param c : "The character to check"
  @return "True if the character needs escaping"
